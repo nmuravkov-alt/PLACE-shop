@@ -8,7 +8,12 @@ def get_conn():
 def get_categories():
     conn = get_conn()
     conn.row_factory = sqlite3.Row
-    cur = conn.execute("SELECT DISTINCT category FROM products WHERE is_active=1 AND category<>'' ORDER BY category")
+    cur = conn.execute("""
+        SELECT DISTINCT category
+        FROM products
+        WHERE is_active=1 AND category<>''
+        ORDER BY category
+    """)
     rows = [r["category"] for r in cur.fetchall()]
     conn.close()
     return rows
