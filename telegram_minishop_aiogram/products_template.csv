@@ -1,0 +1,4 @@
+title,description,price,photo_url,category,sizes,is_active
+Футболка PLACE,"Белая, 100% хлопок",1990,https://picsum.photos/seed/place-shirt/800/600,Одежда,"XS,S,M,L,XL",1
+Худи PLACE,Тёплое худи с принтом,3990,https://picsum.photos/seed/place-hoodie/800/600,Одежда,"S,M,L,XL",1
+Кепка PLACE,Регулируемый ремешок,1490,https://picsum.photos/seed/place-cap/800/600,Аксессуары,ONESIZE,1

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>PLACE — магазин</title>
+  <link rel="stylesheet" href="/web/style.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <header class="app-bar">
+    <h1>PLACE</h1>
+    <div class="right">
+      <button id="btnCart" class="icon">🛒</button>
+    </div>
+  </header>
+
+  <main id="app">
+    <section id="cats" class="panel">
+      <h2>Категории</h2>
+      <div id="catGrid" class="grid"></div>
+    </section>
+
+    <section id="list" class="panel hidden">
+      <div class="toolbar">
+        <button id="btnBack" class="text">← Назад</button>
+        <h2 id="listTitle">Товары</h2>
+      </div>
+      <div id="prodList" class="vlist"></div>
+    </section>
+
+    <section id="cartPanel" class="panel hidden">
+      <div class="toolbar">
+        <button id="btnBackFromCart" class="text">← Назад</button>
+        <h2>Корзина</h2>
+      </div>
+      <div id="cartList" class="vlist"></div>
+      <div class="checkout">
+        <h3>Оформление</h3>
+        <label>ФИО<input id="fullName" placeholder="Иван Иванов"></label>
+        <label>Адрес СДЭК / ПВЗ<input id="address" placeholder="Город, ПВЗ/улица"></label>
+        <label>Телефон<input id="phone" inputmode="tel" placeholder="+7..."></label>
+        <label>Комментарий<textarea id="comment" rows="2" placeholder="Опционально"></textarea></label>
+        <div class="total">Итого: <span id="total">0 ₽</span></div>
+        <button id="btnCheckout" class="primary">Отправить заказ</button>
+      </div>
+    </section>
+  </main>
+
+  <template id="catTpl">
+    <button class="card cat">
+      <img alt=""><span class="title"></span>
+    </button>
+  </template>
+
+  <template id="prodTpl">
+    <div class="card prod">
+      <img class="cover" alt="">
+      <div class="info">
+        <div class="title"></div>
+        <div class="desc"></div>
+        <div class="price"></div>
+        <div class="sizes"></div>
+        <div class="actions">
+          <select class="sizeSel"></select>
+          <button class="add">Добавить</button>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <template id="cartItemTpl">
+    <div class="row">
+      <div class="l">
+        <div class="t"></div>
+        <div class="s"></div>
+      </div>
+      <div class="r">
+        <button class="qty dec">−</button>
+        <span class="q">1</span>
+        <button class="qty inc">+</button>
+        <span class="p">0 ₽</span>
+      </div>
+    </div>
+  </template>
+
+  <script src="/web/app.js"></script>
+
+  <nav class="bottom-nav">
+    <button id="tabDiscounts"><span>%</span><em>Скидки</em></button>
+    <button id="tabFav"><span>❤</span><em>Избранное</em></button>
+    <button id="tabHome" class="active"><span>⌂</span><em>Главная</em></button>
+    <button id="tabCart"><span>🛒</span><em>Корзина</em></button>
+    <button id="tabWrite"><span>✉</span><em>Написать</em></button>
+  </nav>
+
+</body>
+</html>
