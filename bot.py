@@ -1,4 +1,8 @@
-import asyncio, json, logging, os
+import asyncio
+import json
+import logging
+import os
+
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
@@ -13,22 +17,22 @@ from db import (
 
 load_dotenv()
 
-BOT_TOKEN  = os.getenv("BOT_TOKEN", "")
-WEBAPP_URL = (os.getenv("WEBAPP_URL", "")).strip()  # ожидается: https://place-shop-production.up.railway.app/
+BOT_TOKEN  = os.getenv("BOT_TOKEN", "").strip()
+WEBAPP_URL = (os.getenv("WEBAPP_URL", "")).strip()   # например: https://place-shop-production.up.railway.app/
 PORT       = int(os.getenv("PORT", "8000"))
 
-# Нормализуем WEBAPP_URL -> /web/
+# ── Нормализуем WEBAPP_URL -> .../web/
 if WEBAPP_URL:
     if not WEBAPP_URL.startswith(("http://", "https://")):
         WEBAPP_URL = "https://" + WEBAPP_URL.lstrip("/")
+    # уберём лишние // внутри (на всякий)
+    WEBAPP_URL = WEBAPP_URL.replace("://", "§§").replace("//", "/").replace("§§", "://")
     if not WEBAPP_URL.endswith("/"):
         WEBAPP_URL += "/"
-    if not WEBAPP_URL.endswith("/web/"):
-        # если указали корень, добавим web/
-        if WEBAPP_URL.endswith("/web"):
+    # доведём до /web/
+    if not WEBAPP_URL.endswith("web/"):
+        if WEBAPP_URL.endswith("web"):
             WEBAPP_URL += "/"
-        elif WEBAPP_URL.endswith("//web/"):
-            pass
         else:
             WEBAPP_URL += "web/"
 
@@ -36,15 +40,15 @@ def _parse_ids(s: str):
     res = []
     for part in (s or "").split(","):
         part = part.strip()
-        if not part: 
+        if not part:
             continue
         try:
             res.append(int(part))
-        except:
+        except ValueError:
             pass
     return res
 
-# Менеджер(ы) — по ТЗ один ID, но оставим поддержку списка
+# Менеджер(ы)
 DEFAULT_MANAGER_ID = 6773668793
 ADMIN_CHAT_IDS = _parse_ids(os.getenv("ADMIN_CHAT_IDS", "")) or [DEFAULT_MANAGER_ID]
 
@@ -57,19 +61,26 @@ bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher()
 
 # ---------------- WebApp & API ----------------
-async def index_handler(request):
+async def index_handler(request: web.Request):
+    """Главная страница /"""
     return web.FileResponse(os.path.join("web", "index.html"))
 
-async def file_handler(request):
-    p = os.path.join("web", request.match_info["path"])
-    if not os.path.isfile(p):
+async def file_handler(request: web.Request):
+    """
+    Отдаём статические файлы из /web.
+    Если путь пустой (запрос на /web или /web/), отдаём index.html.
+    """
+    rel = request.match_info.get("path", "")
+    if rel in ("", "/"):
+        return web.FileResponse(os.path.join("web", "index.html"))
+    full = os.path.join("web", rel)
+    if not os.path.isfile(full):
         return web.Response(status=404, text="Not found")
-    return web.FileResponse(p)
+    return web.FileResponse(full)
 
-# Нормализованные категории ( [{title,image_url}] )
-async def api_categories(request):
+async def api_categories(request: web.Request):
+    """Категории [{title, image_url}]"""
     cats = get_categories()
-    # на всякий случай нормализуем
     out = []
     for c in cats:
         if isinstance(c, dict):
@@ -77,61 +88,76 @@ async def api_categories(request):
             img   = c.get("image_url") or c.get("image") or ""
         else:
             title, img = str(c), ""
-        if not title:
-            continue
-        out.append({"title": title, "image_url": img})
+        if title:
+            out.append({"title": title, "image_url": img})
     return web.json_response(out)
 
-# Подкатегории -> ["Все", ...]
-async def api_subcategories(request):
+async def api_subcategories(request: web.Request):
+    """Подкатегории по категории -> ["Все", ...]"""
     cat = request.rel_url.query.get("category")
     if not cat:
         return web.json_response([])
-    subs = get_subcategories(cat)
+    subs = get_subcategories(cat) or []
     titles = []
-    for s in subs or []:
-        if isinstance(s, dict):
-            t = s.get("title") or s.get("name") or ""
-        else:
-            t = str(s or "")
+    for s in subs:
+        t = s.get("title") or s.get("name") if isinstance(s, dict) else str(s or "")
         if t:
             titles.append(t)
-    # уникальные в исходном порядке
+    # уникальные с сохранением порядка
     seen, uniq = set(), []
     for t in titles:
         if t not in seen:
-            seen.add(t); uniq.append(t)
+            seen.add(t)
+            uniq.append(t)
     return web.json_response(uniq)
 
-async def api_products(request):
+async def api_products(request: web.Request):
+    """Товары по (category, subcategory)"""
     cat = request.rel_url.query.get("category")
     sub = request.rel_url.query.get("subcategory")
     return web.json_response(get_products(cat, sub))
 
-# запасной REST, если вдруг sendData не сработал
-async def api_order(request):
+async def api_order(request: web.Request):
+    """
+    Запасной REST при проблемах с sendData:
+    принимает { items:[{product_id, qty, size}], full_name, phone, address, comment, telegram }
+    """
     data = await request.json()
     items, total = [], 0
     for it in data.get("items", []):
         p = get_product(int(it["product_id"]))
-        if not p: continue
+        if not p:
+            continue
         qty  = int(it.get("qty", 1))
         size = (it.get("size") or "")
         items.append({"product_id": p["id"], "size": size, "qty": qty, "price": p["price"]})
         total += p["price"] * qty
+
     order_id = create_order(
-        user_id=0, username=None,
-        full_name=data.get("full_name"), phone=data.get("phone"),
-        address=data.get("address"), comment=data.get("comment"),
+        user_id=0,
+        username=None,
+        full_name=data.get("full_name"),
+        phone=data.get("phone"),
+        address=data.get("address"),
+        comment=data.get("comment"),
         telegram=data.get("telegram"),
-        total_price=total, items=items
+        total_price=total,
+        items=items,
     )
     return web.json_response({"ok": True, "order_id": order_id})
 
-def build_app():
+def build_app() -> web.Application:
     app = web.Application()
+
+    # корень
     app.router.add_get("/", index_handler)
-    app.router.add_get("/web/{path:.*}", file_handler)
+
+    # ВАЖНО: три маршрута, чтобы /web, /web/ и /web/anything работали
+    app.router.add_get("/web", file_handler)               # /web
+    app.router.add_get("/web/", file_handler)              # /web/
+    app.router.add_get("/web/{path:.*}", file_handler)     # /web/...
+
+    # API
     app.router.add_get("/api/categories", api_categories)
     app.router.add_get("/api/subcategories", api_subcategories)
     app.router.add_get("/api/products", api_products)
@@ -151,7 +177,7 @@ async def start(m: Message):
 
 @dp.message(F.web_app_data)
 async def on_webapp_data(m: Message):
-    # данные с vitrina.sendData(...)
+    # данные пришли из vitrina.sendData(...)
     try:
         data = json.loads(m.web_app_data.data)
     except Exception:
@@ -161,7 +187,8 @@ async def on_webapp_data(m: Message):
     items_payload, total = [], 0
     for it in data.get("items", []):
         p = get_product(int(it["product_id"]))
-        if not p: continue
+        if not p:
+            continue
         qty  = int(it.get("qty", 1))
         size = (it.get("size") or "")
         items_payload.append({"product_id": p["id"], "size": size, "qty": qty, "price": p["price"]})
