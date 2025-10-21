@@ -23,25 +23,22 @@ let state = {
   cart: [] // {product_id, title, price, size, qty, image_url}
 };
 
-// --- UI helpers ---
 const $ = (sel) => document.querySelector(sel);
 function page(html) { $("#app").innerHTML = html; }
+function grid(items){ return `<div class="grid">${items.join("")}</div>`; }
 
 function topbar(title, onBack) {
   return `
     <div class="topbar">
       ${onBack ? `<button class="back" id="backBtn">←</button>` : '<div></div>'}
       <div class="title">${title}</div>
-      <button class="cart" id="cartBtn">🛒</button>
+      <div class="r">
+        <button class="cart" id="cartBtn">🛒</button>
+      </div>
     </div>
   `;
 }
 
-function grid(items) {
-  return `<div class="grid">${items.join("")}</div>`;
-}
-
-// --- Views ---
 async function showCategories() {
   state.view = "categories"; state.category = null; state.subcategory = null;
   const cats = await api.categories();
@@ -50,10 +47,7 @@ async function showCategories() {
        <img src="/web/placeholder_clothes.jpg" alt="">
        <div class="name">${c}</div>
      </div>`);
-  page(`
-    ${topbar("PLACE", null)}
-    <div class="pad">${grid(items)}</div>
-  `);
+  page(`${topbar("PLACE", null)}<div class="pad">${grid(items)}</div>`);
   bindCommon();
   document.querySelectorAll(".card.cat").forEach(el => {
     el.addEventListener("click", async () => {
@@ -72,10 +66,7 @@ async function showSubcategories() {
        <img src="/web/placeholder_acc.jpg" alt="">
        <div class="name">${s}</div>
      </div>`);
-  page(`
-    ${topbar(state.category, () => showCategories())}
-    <div class="pad">${grid(items)}</div>
-  `);
+  page(`${topbar(state.category, () => showCategories())}<div class="pad">${grid(items)}</div>`);
   bindCommon(true);
   document.querySelectorAll(".card.sub").forEach(el => {
     el.addEventListener("click", () => {
@@ -112,6 +103,7 @@ async function showProducts() {
     })}
     <div class="pad products">${cards || '<div class="empty">Пока пусто</div>'}</div>
   `);
+
   bindCommon(true);
   document.querySelectorAll(".pitem .add").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -200,7 +192,7 @@ function showCheckout() {
   });
 }
 
-function bindCommon(withBack=true){
+function bindCommon(){
   $("#cartBtn")?.addEventListener("click", showCart);
   $("#backBtn")?.addEventListener("click", ()=>{
     if (state.view === "subcategories") showCategories();
@@ -210,5 +202,4 @@ function bindCommon(withBack=true){
   });
 }
 
-// --- Start ---
 document.addEventListener("DOMContentLoaded", showCategories);
