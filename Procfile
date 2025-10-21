@@ -1,4 +1,3 @@
-web: python bot.py
 web: bash -lc "python - <<'PY'
 import sqlite3, pathlib
 sql = open('models.sql','r', encoding='utf-8').read()
