@@ -3,7 +3,7 @@
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,system-ui}
-.container{max-width:860px;margin:0 auto;padding:16px 16px 110px} /* + отступ под нижнюю панель */
+.container{max-width:860px;margin:0 auto;padding:16px 16px 110px} /* отступ под нижнюю панель */
 
 .topbar{position:sticky;top:0;z-index:5;background:var(--bg);display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #eee}
 .brand .logo{font-weight:800;letter-spacing:.06em;font-size:28px}
@@ -45,5 +45,5 @@ input,textarea{width:100%;margin-top:6px;padding:11px 12px;border:1px solid #e5e
 .cart-line{display:flex;justify-content:space-between;gap:10px;padding:10px;border:1px solid #eee;border-radius:12px;background:#fafafa}
 .total{font-weight:800}
 
-/* на всякий случай вырубаем старые плавающие/боковые элементы */
+/* отключаем старые плавающие элементы, если вдруг остались */
 .fab,.float-cart,.left-cart,.side-cart,.bottom-chips,.chips-legacy,.chip-row{display:none!important}
