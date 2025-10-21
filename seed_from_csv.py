@@ -1,62 +1,41 @@
+import csv, sqlite3
 
-import os, csv, sqlite3, argparse
-from contextlib import closing
-from dotenv import load_dotenv
+DB_PATH = "data.sqlite"
 
-load_dotenv()
-DB_PATH = os.getenv("DATABASE_PATH", "data.sqlite")
+def upsert_product(row, cur):
+    title       = row.get("title","").strip()
+    category    = row.get("category","").strip()
+    subcategory = row.get("subcategory","").strip()
+    description = row.get("description","").strip()
+    price       = int(float(row.get("price","0")))
+    sizes       = ",".join([s.strip() for s in row.get("sizes","").split(",") if s.strip()])
+    image_url   = row.get("image_url","").strip()
+    is_active   = int(row.get("is_active","1") or 1)
 
-def ensure_schema(conn):
-    conn.executescript("""
-    CREATE TABLE IF NOT EXISTS products (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT NOT NULL,
-        description TEXT DEFAULT '',
-        price INTEGER NOT NULL,
-        photo_url TEXT DEFAULT '',
-        category TEXT DEFAULT '',
-        sizes TEXT DEFAULT '',
-        is_active INTEGER DEFAULT 1
-    );
-    """)
+    cur.execute("""
+      INSERT INTO products (title, category, subcategory, description, price, sizes, image_url, is_active)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (title, category, subcategory, description, price, sizes, image_url, is_active))
 
-def load_csv(path):
-    with open(path, newline="", encoding="utf-8") as f:
-        r = csv.DictReader(f)
-        rows = list(r)
-    return rows
-
-def insert_products(conn, rows):
+def main(csv_path="products_template.csv", clear=False):
+    conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    for r in rows:
-        title = (r.get("title") or "").strip()
-        if not title: continue
-        desc = (r.get("description") or "").strip()
-        price = int(float(r.get("price") or 0))
-        photo = (r.get("photo_url") or "").strip()
-        cat = (r.get("category") or "").strip()
-        sizes = (r.get("sizes") or "ONESIZE").strip()
-        is_active = int(r.get("is_active") or 1)
-        cur.execute("""
-            INSERT INTO products (title, description, price, photo_url, category, sizes, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (title, desc, price, photo, cat, sizes, is_active))
+    if clear:
+        cur.execute("DELETE FROM products")
+
+    with open(csv_path, newline='', encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            upsert_product(row, cur)
+
     conn.commit()
-
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--csv", required=True, help="Path to products CSV file")
-    ap.add_argument("--clear", action="store_true", help="Clear existing products before import")
-    args = ap.parse_args()
-
-    with closing(sqlite3.connect(DB_PATH)) as conn:
-        ensure_schema(conn)
-        if args.clear:
-            conn.execute("DELETE FROM products")
-            conn.commit()
-        rows = load_csv(args.csv)
-        insert_products(conn, rows)
-        print(f"Imported {len(rows)} products into {DB_PATH}")
+    conn.close()
+    print("Imported products into data.sqlite")
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--csv", default="products_template.csv")
+    ap.add_argument("--clear", action="store_true")
+    a = ap.parse_args()
+    main(a.csv, a.clear)
