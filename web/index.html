@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-  <title>LAYOUTPLACE Shop</title>
+  <title>LAYOUTPLACE SHOP</title>
   <link rel="stylesheet" href="./style.css" />
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
-      <span class="logo">PLACE</span>
-      <span class="muted">мини-приложение</span>
+      <span class="logo">LAYOUTPLACE</span>
+      <span class="muted">SHOP</span>
     </div>
 
     <!-- единственная корзина справа -->
@@ -52,16 +52,20 @@
         <input required name="full_name" placeholder="Иван Иванов">
       </label>
 
-      <label>Телефон
-        <input required name="phone" placeholder="+7 900 000-00-00">
+      <label>Телефон (+7)
+        <input required name="phone" pattern="^\\+7\\d{10}$" placeholder="+7XXXXXXXXXX">
       </label>
 
       <label>Адрес / пункт СДЭК
         <textarea required name="address" rows="2" placeholder="Город, улица, дом / код СДЭК"></textarea>
       </label>
 
-      <label>Комментарий
-        <textarea name="comment" rows="2" placeholder="Размер уточнение, пожелания…"></textarea>
+      <label>Комментарий к заказу (размер)
+        <textarea name="comment" rows="2" placeholder="Размер/примечания…"></textarea>
+      </label>
+
+      <label>Telegram (для связи с Вами)
+        <input name="telegram" placeholder="@username">
       </label>
 
       <div class="sheet-row">
