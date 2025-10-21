@@ -1,224 +1,220 @@
-// Telegram SDK
-const tg = window.Telegram?.WebApp; tg?.ready(); tg?.expand();
+// ===== helpers =====
+const tg = window.Telegram?.WebApp;
+if (tg) { tg.ready(); tg.expand?.(); }
 
-const $  = (s, el=document) => el.querySelector(s);
-const $$ = (s, el=document) => [...el.querySelectorAll(s)];
+const grid = document.getElementById("grid");
+const categoriesEl = document.getElementById("categories");
+const subSelect = document.getElementById("subSelect");
+const cartBtn = document.getElementById("cartBtn");
+const cartCount = document.getElementById("cartCount");
+const contactBtn = document.getElementById("contactBtn");
+const checkoutBtn = document.getElementById("checkoutBtn");
+const checkoutModal = document.getElementById("checkoutModal");
+const orderForm = document.getElementById("orderForm");
+const phoneInput = document.getElementById("phone");
+const cancelOrder = document.getElementById("cancelOrder");
 
-async function jget(u){ const r = await fetch(u); if(!r.ok) throw new Error(u); return r.json(); }
-async function jpost(u,d){ const r = await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}); return r.json().catch(()=>({})); }
+let currentCategory = null;
+let cart = []; // {id,title,price,size,qty,category}
 
-function toast(msg){
-  if (tg?.showPopup) tg.showPopup({title:'', message:msg, buttons:[{type:'close'}]});
-  else alert(msg);
+// phone mask/validation: allow "+7" then digits, keep only + and digits in view
+phoneInput.addEventListener("input", () => {
+  let v = phoneInput.value.replace(/[^\d+]/g, "");
+  if (!v.startsWith("+7")) v = "+7" + v.replace(/\D/g, "").replace(/^7/, "");
+  // trim to "+7" + 10 digits
+  v = v.slice(0, 12);
+  phoneInput.value = v;
+  // live validity
+  phoneInput.setCustomValidity(/^\+7\d{10}$/.test(v) ? "" : "Следуйте формату: +7XXXXXXXXXX");
+});
+
+// open/close modal
+checkoutBtn.addEventListener("click", () => checkoutModal.showModal());
+cancelOrder.addEventListener("click", () => checkoutModal.close());
+
+// contact button: open DM to менеджера (замени id при желании)
+contactBtn.addEventListener("click", () => {
+  // если есть username – открываем compose, иначе просто подсветим поле Telegram
+  document.getElementById("telegram")?.focus();
+});
+
+// cart helpers
+function updateCartBadge() {
+  const n = cart.reduce((s, i) => s + i.qty, 0);
+  cartCount.textContent = n;
+  checkoutBtn.disabled = n === 0;
 }
-function openManagerChat(){
-  const id = 6773668793; // менеджер
-  try { tg?.openTelegramLink(`tg://user?id=${id}`); }
-  catch { toast('Напишите менеджеру в Telegram: откройте чат с магазином и нажмите «Написать».'); }
+
+function addToCart(product, size) {
+  const key = `${product.id}|${size}`;
+  const ex = cart.find(i => `${i.id}|${i.size}` === key);
+  if (ex) ex.qty += 1;
+  else cart.push({ id: product.id, title: product.title, price: product.price, category: product.category, size, qty: 1 });
+  updateCartBadge();
 }
 
-// ---------- state ----------
-let state = { cat: null, sub: null, products: [], cart: [] }; // cart: {id,title,price,size,qty}
+cartBtn.addEventListener("click", () => {
+  if (cart.length === 0) {
+    alert("Корзина пуста");
+    return;
+  }
+  const lines = cart.map(i => `${i.title} [${i.size}] × ${i.qty} — ${i.price * i.qty} ₽`);
+  alert("Корзина:\n\n" + lines.join("\n"));
+});
 
-function setCartBadge(){
-  const n = state.cart.reduce((a,x)=>a+x.qty,0);
-  $("#cartQty").textContent = n;
-  updateBottomBar();
+// ===== sizes logic =====
+function getSizesForCategory(category) {
+  const c = (category || "").toLowerCase();
+  // одежда
+  if (
+    c.includes("футболк") || c.includes("лонгслив") || c.includes("рубаш")
+    || c.includes("толстовк") || c.includes("свитер")
+    || c.includes("куртк") || c.includes("бомбер")
+    || c.includes("джинс") || c.includes("брюк")
+    || c.includes("юбк") || c.includes("шорт")
+  ) {
+    return ["XS", "S", "M", "L", "XL", "XXL"];
+  }
+  // обувь
+  if (c.includes("обув") || c.includes("кросс")) {
+    return Array.from({ length: 10 }, (_, i) => String(36 + i)); // 36–45
+  }
+  // шапки/кепки/аксессуары/сумки
+  return ["ONE SIZE"];
 }
-function updateBottomBar(){
-  const primary = $("#primaryAction");
-  if (primary) primary.disabled = (state.cart.length === 0);
-}
 
-// ---------- catalog ----------
-async function loadCategories(){
-  let list = [];
-  try { list = await jget('/api/categories'); } catch { list = []; }
-
-  const cats = (list||[]).map(x => ({
-    title: (x && typeof x === 'object') ? (x.title || x.name || x.category || '') : String(x||''),
-    image_url: (x && typeof x === 'object') ? (x.image_url || x.image || '') : ''
-  })).filter(c => c.title);
-
-  const wrap = $("#cats"); wrap.innerHTML = '';
-  if (!cats.length){ wrap.style.display='none'; return; }
-  wrap.style.display='flex';
-
-  cats.forEach(c=>{
-    const b = document.createElement('button');
-    b.className = 'chip' + (state.cat===c.title?' active':'');
-    b.textContent = c.title;
-    b.onclick = ()=>{ state.cat=c.title; state.sub=null; renderActiveCats(); loadSubcategories(); loadProducts(); };
-    wrap.appendChild(b);
+function createSizeSelect(product) {
+  const sizes = getSizesForCategory(product.category || "");
+  const select = document.createElement("select");
+  select.className = "size-select";
+  sizes.forEach(s => {
+    const opt = document.createElement("option");
+    opt.value = s; opt.textContent = s;
+    select.appendChild(opt);
   });
+  return select;
+}
 
-  function renderActiveCats(){
-    $$('#cats .chip').forEach(el=>el.classList.toggle('active', el.textContent===state.cat));
+// ===== rendering =====
+async function fetchJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return r.json();
+}
+
+async function loadCategories() {
+  const cats = await fetchJSON("/api/categories");
+  categoriesEl.innerHTML = "";
+  cats.forEach(c => {
+    const el = document.createElement("button");
+    el.className = "cat";
+    el.innerHTML = `<img src="${c.image_url || "/web/placeholder_clothes.jpg"}" alt="">
+                    <div class="t">${c.title}</div>`;
+    el.addEventListener("click", () => pickCategory(c.title));
+    categoriesEl.appendChild(el);
+  });
+}
+
+async function pickCategory(catTitle) {
+  currentCategory = catTitle;
+  // подкатегории
+  const subs = await fetchJSON(`/api/subcategories?category=${encodeURIComponent(catTitle)}`);
+  subSelect.innerHTML = "";
+  if (subs && subs.length) {
+    subSelect.hidden = false;
+    const allOpt = new Option("Все", "", true, true);
+    subSelect.appendChild(allOpt);
+    subs.forEach(s => subSelect.appendChild(new Option(s, s)));
+  } else {
+    subSelect.hidden = true;
   }
-  if (!state.cat){ state.cat = cats[0].title; renderActiveCats(); }
+  await renderProducts();
 }
 
-async function loadSubcategories(){
-  const wrap = $("#subcats"); wrap.innerHTML = '';
-  if (!state.cat){ wrap.style.display='none'; return; }
-  let subs = [];
-  try { subs = await jget('/api/subcategories?category='+encodeURIComponent(state.cat)); }
-  catch { subs = []; }
+async function renderProducts() {
+  const sub = subSelect.hidden ? "" : (subSelect.value || "");
+  const url = `/api/products?category=${encodeURIComponent(currentCategory || "")}&subcategory=${encodeURIComponent(sub)}`;
+  const items = await fetchJSON(url);
+  grid.innerHTML = "";
+  items.forEach(p => {
+    const card = document.createElement("div");
+    card.className = "card";
 
-  const titles = (subs||[]).map(s => (typeof s === 'string' ? s : (s?.title || s?.name || ''))).filter(Boolean);
-  if (!titles.length){ wrap.style.display='none'; return; }
-  wrap.style.display='flex';
+    card.innerHTML = `
+      <div class="title">${p.title}</div>
+      <div class="price">${(p.price ?? 0).toLocaleString("ru-RU")} ₽</div>
+    `;
 
-  const addChip = (txt, active) => {
-    const b = document.createElement('button');
-    b.className = 'chip' + (active ? ' active':'');
-    b.textContent = txt;
-    b.onclick = ()=>{ state.sub = (txt==='Все') ? null : txt; renderSubs(); loadProducts(); };
-    wrap.appendChild(b);
-  };
+    const sizeSelect = createSizeSelect(p);
+    card.appendChild(sizeSelect);
 
-  addChip('Все', state.sub===null);
-  titles.forEach(s => addChip(s, state.sub===s));
-
-  function renderSubs(){
-    $$('#subcats .chip').forEach(el=>{
-      const txt = el.textContent;
-      el.classList.toggle('active', (state.sub===null && txt==='Все') || (state.sub===txt));
-    });
-  }
-}
-
-async function loadProducts(){
-  const params = new URLSearchParams();
-  if (state.cat) params.set('category', state.cat);
-  if (state.sub !== null && state.sub !== undefined) params.set('subcategory', state.sub || '');
-  let list = [];
-  try { list = await jget('/api/products?'+params.toString()); } catch { list = []; }
-
-  const prods = (list||[]).map(p => ({
-    id: Number(p.id),
-    title: p.title || '',
-    price: Number(p.price || 0),
-    image_url: p.image_url || p.image || '',
-    sizes: Array.isArray(p.sizes) ? p.sizes
-      : (typeof p.sizes === 'string' ? p.sizes.split(/[,\|]/).map(s=>s.trim()).filter(Boolean) : [])
-  })).filter(p => p.id && p.title);
-
-  state.products = prods;
-  renderProducts();
-}
-
-function renderProducts(){
-  const g = $("#grid"); g.innerHTML = '';
-  state.products.forEach(p=>{
-    const card = document.createElement('div'); card.className = 'card';
-
-    const img = document.createElement('img');
-    img.src = p.image_url || (state.cat && state.cat.toLowerCase().includes('аксесс') ? './placeholder_acc.jpg' : './placeholder_clothes.jpg');
-    img.alt = p.title; img.style.width='100%'; img.style.borderRadius='12px';
-    card.appendChild(img);
-
-    const h4 = document.createElement('h4'); h4.textContent = p.title; card.appendChild(h4);
-
-    const price = document.createElement('div'); price.className = 'price'; price.textContent = `${p.price.toLocaleString('ru-RU')} ₽`;
-    card.appendChild(price);
-
-    const sel = document.createElement('select'); sel.className = 'select';
-    const sizes = Array.isArray(p.sizes) ? p.sizes : [];
-    if (sizes.length){
-      sizes.forEach(s => { const o=document.createElement('option'); o.value=s; o.textContent=s; sel.appendChild(o); });
-    } else {
-      const o=document.createElement('option'); o.value=''; o.textContent='—'; sel.appendChild(o);
-    }
-    card.appendChild(sel);
-
-    const btn = document.createElement('button'); btn.className='btn'; btn.textContent='В корзину';
-    btn.onclick = ()=> addToCart(p, sel.value || '');
+    const btn = document.createElement("button");
+    btn.className = "btn primary";
+    btn.textContent = "В корзину";
+    btn.addEventListener("click", () => addToCart(p, sizeSelect.value));
     card.appendChild(btn);
 
-    g.appendChild(card);
+    grid.appendChild(card);
   });
 }
 
-function addToCart(p, size){
-  const same = state.cart.find(i=>i.id===p.id && i.size===size);
-  if (same) same.qty += 1;
-  else state.cart.push({id:p.id,title:p.title,price:p.price,size,qty:1});
-  setCartBadge(); toast('Добавлено в корзину');
-}
+// подкатегория меняется — перегружаем товары
+subSelect.addEventListener("change", renderProducts);
 
-// ---------- cart & checkout ----------
-function openCart(){
-  const list = $("#cartList"); list.innerHTML='';
-  if(state.cart.length===0){
-    list.innerHTML = '<div class="muted">Пока пусто</div>';
-  } else {
-    state.cart.forEach((it,idx)=>{
-      const line = document.createElement('div'); line.className='cart-line';
-      line.innerHTML = `
-        <div>
-          <div><b>${it.title}</b></div>
-          <div class="muted">${it.size || '—'} × ${it.qty}</div>
-        </div>
-        <div><b>${(it.qty*it.price).toLocaleString('ru-RU')} ₽</b></div>`;
-      line.onclick = () => {
-        it.qty -= 1; if (it.qty<=0) state.cart.splice(idx,1);
-        setCartBadge(); openCart();
-      };
-      list.appendChild(line);
-    });
-  }
-  const total = state.cart.reduce((a,x)=>a+x.qty*x.price,0);
-  $("#cartTotal").textContent = `Итого: ${total.toLocaleString('ru-RU')} ₽`;
-  $("#cartDialog").showModal();
-}
-
-function toCheckout(){
-  if (state.cart.length===0){ toast('Корзина пуста'); return; }
-  $("#cartDialog").close();
-  $("#checkout").showModal();
-}
-function closeCheckout(){ $("#checkout").close(); }
-
-async function submitOrder(e){
+// ===== checkout (sendData) =====
+orderForm.addEventListener("submit", (e) => {
   e.preventDefault();
-  if (state.cart.length===0){ toast('Корзина пуста'); return; }
 
-  const fd = new FormData(e.target);
+  // финальная валидация телефона
+  const raw = phoneInput.value.trim();
+  const normalized = raw.replace(/[^\d+]/g, "");
+  if (!/^\+7\d{10}$/.test(normalized)) {
+    phoneInput.setCustomValidity("Следуйте формату: +7XXXXXXXXXX");
+    phoneInput.reportValidity();
+    return;
+  } else {
+    phoneInput.setCustomValidity("");
+  }
+
+  const form = new FormData(orderForm);
   const payload = {
-    full_name: fd.get('full_name')?.trim(),
-    phone:     fd.get('phone')?.trim(),
-    address:   fd.get('address')?.trim(),
-    comment:   fd.get('comment')?.trim(),
-    telegram:  fd.get('telegram')?.trim(),
-    items: state.cart.map(x=>({ product_id:x.id, size:x.size, qty:x.qty }))
+    full_name: form.get("full_name")?.toString().trim(),
+    phone: normalized,
+    address: form.get("address")?.toString().trim(),
+    comment: form.get("comment")?.toString().trim(),
+    telegram: form.get("telegram")?.toString().trim(),
+    items: cart.map(i => ({
+      product_id: i.id,
+      size: i.size,
+      qty: i.qty
+    }))
   };
 
-  try { tg?.sendData(JSON.stringify(payload)); } catch {}
-  try { await jpost('/api/order', payload); } catch {}
-
-  state.cart = []; setCartBadge();
-  $("#checkout").close();
-  toast('Заказ отправлен. Мы свяжемся с вами!');
-}
-
-// listeners
-$("#openCart").onclick = openCart;
-$("#toCheckout").onclick = toCheckout;
-$("#closeCheckout").onclick = closeCheckout;
-$("#orderForm").addEventListener('submit', submitOrder);
-$("#contactAction").onclick = openManagerChat;
-$("#primaryAction").onclick = toCheckout;
-
-// init
-(async function init(){
-  try{
-    await loadCategories();
-    await loadSubcategories();
-    await loadProducts();
-  }catch(e){
-    console.error(e);
-    toast('Ошибка загрузки каталога');
+  if (!payload.items.length) {
+    alert("Корзина пуста");
+    return;
   }
-  setCartBadge(); updateBottomBar();
+
+  // отправка в бота
+  try {
+    tg?.sendData?.(JSON.stringify(payload));
+    checkoutModal.close();
+    alert("Заказ отправлен. Спасибо!");
+    // очистим корзину
+    cart = [];
+    updateCartBadge();
+  } catch (e) {
+    console.error(e);
+    alert("Не удалось отправить заказ. Попробуйте ещё раз.");
+  }
+});
+
+// старт
+(async () => {
+  try {
+    await loadCategories();
+  } catch (e) {
+    console.error(e);
+  }
+  updateCartBadge();
 })();
