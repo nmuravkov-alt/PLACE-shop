@@ -1,5 +1,4 @@
 {
-  "build": {
-    "rootDirectory": "telegram_minishop_aiogram"
-  }
+  "build": "pip install -r requirements.txt && python3 - <<'PY'\nimport sqlite3\nsql=open('models.sql','r',encoding='utf-8').read()\nconn=sqlite3.connect('data.sqlite')\nconn.executescript(sql)\nconn.close()\nprint('DB schema ensured')\nPY\n && python3 seed_from_csv.py --csv products_template.csv --clear",
+  "start": "python3 bot.py"
 }
