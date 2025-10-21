@@ -1,4 +1,3 @@
-
 import asyncio
 import json
 import logging
@@ -8,8 +7,12 @@ from typing import Dict, List, Tuple
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from aiogram.types import (
+    Message, CallbackQuery, InlineKeyboardMarkup,
+    InlineKeyboardButton, WebAppInfo
+)
 from aiogram.fsm.context import FSMContext
+from aiogram.client.default import DefaultBotProperties   # <— добавили
 from dotenv import load_dotenv
 
 from aiohttp import web
@@ -24,7 +27,9 @@ WEBAPP_URL = os.getenv("WEBAPP_URL", "")  # e.g., https://<your-railway-domain>/
 PORT = int(os.getenv("PORT", "8000"))
 
 logging.basicConfig(level=logging.INFO)
-bot = Bot(BOT_TOKEN, parse_mode="HTML")
+
+# === ИСПРАВЛЕНО: инициализация бота под aiogram 3.7+ ===
+bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher()
 
 # ----------------- WebApp (aiohttp) -----------------
@@ -53,7 +58,8 @@ async def api_order(request):
     total = 0
     for it in data.get("items", []):
         p = get_product(int(it["product_id"]))
-        if not p: continue
+        if not p:
+            continue
         qty = int(it.get("qty", 1))
         size = (it.get("size") or "")
         items.append({"product_id": p["id"], "size": size, "qty": qty, "price": p["price"]})
@@ -79,7 +85,10 @@ def build_app():
 @dp.message(Command("start"))
 async def start(m: Message):
     kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="Открыть магазин", web_app=WebAppInfo(url=WEBAPP_URL or "https://example.com"))
+        InlineKeyboardButton(
+            text="Открыть магазин",
+            web_app=WebAppInfo(url=WEBAPP_URL or "https://example.com")
+        )
     ]])
     await m.answer("PLACE — мини-магазин в Telegram. Открой витрину:", reply_markup=kb)
 
@@ -88,14 +97,16 @@ async def on_webapp_data(m: Message):
     try:
         data = json.loads(m.web_app_data.data)
     except Exception:
-        await m.answer("Не удалось прочитать данные заказа."); return
+        await m.answer("Не удалось прочитать данные заказа.")
+        return
 
     # Validate products and calculate total
     items_payload = []
     total = 0
     for it in data.get("items", []):
         p = get_product(int(it["product_id"]))
-        if not p: continue
+        if not p:
+            continue
         qty = int(it.get("qty", 1))
         size = (it.get("size") or "")
         items_payload.append({"product_id": p["id"], "size": size, "qty": qty, "price": p["price"]})
@@ -115,7 +126,10 @@ async def on_webapp_data(m: Message):
     await m.answer(f"✅ Заказ #{order_id} оформлен. Мы свяжемся с вами. Сумма: {total} ₽")
 
     if ADMIN_CHAT_ID:
-        items_text = "\n".join([f"• {get_product(it['product_id'])['title']} [{it['size']}] × {it['qty']} — {it['price']*it['qty']} ₽" for it in items_payload]) or "—"
+        items_text = "\n".join([
+            f"• {get_product(it['product_id'])['title']} [{it['size']}] × {it['qty']} — {it['price']*it['qty']} ₽"
+            for it in items_payload
+        ]) or "—"
         text = (
             f"<b>Новый заказ #{order_id}</b>\n"
             f"Клиент: {data.get('full_name')} (@{m.from_user.username or '—'})\n"
