@@ -1,97 +1,89 @@
-import sqlite3
+import json, sqlite3, time
 
-DB_PATH = "data.sqlite"
+DB = "data.sqlite"
 
-def get_conn():
-    return sqlite3.connect(DB_PATH)
+# Фиксированный список категорий c картинками (плейсхолдеры)
+FIXED_CATEGORIES = [
+    ("Куртки/Бомберы",            "/web/placeholder_clothes.jpg"),
+    ("Толстовки/Свитера",         "/web/placeholder_clothes.jpg"),
+    ("Брюки/Джинсы",              "/web/placeholder_clothes.jpg"),
+    ("Сумки/Рюкзаки",             "/web/placeholder_acc.jpg"),
+    ("Футболки/Лонгсливы/Рубашки","/web/placeholder_clothes.jpg"),
+    ("Шапки/Кепки",               "/web/placeholder_acc.jpg"),
+    ("Шорты/Юбки",                "/web/placeholder_clothes.jpg"),
+    ("Обувь",                     "/web/placeholder_clothes.jpg"),
+    ("Аксессуары",                "/web/placeholder_acc.jpg"),
+]
+
+def _conn():
+    return sqlite3.connect(DB)
 
 def get_categories():
-    conn = get_conn()
-    conn.row_factory = sqlite3.Row
-    cur = conn.execute("""
-        SELECT DISTINCT category
-        FROM products
-        WHERE is_active=1 AND category<>''
-        ORDER BY category
-    """)
-    rows = [r["category"] for r in cur.fetchall()]
-    conn.close()
-    return rows
+    # Возвращаем фиксированный список (как просили)
+    return [{"title": t, "image_url": img} for t, img in FIXED_CATEGORIES]
 
-def get_subcategories(category):
-    conn = get_conn()
-    conn.row_factory = sqlite3.Row
-    cur = conn.execute("""
-        SELECT DISTINCT subcategory
-        FROM products
-        WHERE is_active=1 AND category=? AND subcategory<>''
-        ORDER BY subcategory
-    """, (category,))
-    rows = [r["subcategory"] for r in cur.fetchall()]
-    conn.close()
-    return rows
+def get_subcategories(category: str):
+    # тянем из БД все подкатегории, которые реально есть для категории
+    with _conn() as c:
+        cur = c.execute("""
+            SELECT DISTINCT COALESCE(NULLIF(subcategory,''),'') AS s
+            FROM products
+            WHERE is_active=1 AND category=?
+            ORDER BY s
+        """, (category,))
+        subs = [r[0] for r in cur.fetchall() if r[0]]
+    return subs  # фронт добавит «Все»
 
-def get_products(category=None, subcategory=None):
-    conn = get_conn()
-    conn.row_factory = sqlite3.Row
-    sql = "SELECT * FROM products WHERE is_active=1"
+def get_products(category: str = None, subcategory: str = None):
+    q = "SELECT id,title,price,sizes,image_url FROM products WHERE is_active=1"
     params = []
     if category:
-        sql += " AND category=?"
-        params.append(category)
-    if subcategory:
-        sql += " AND subcategory=?"
-        params.append(subcategory)
-    sql += " ORDER BY id DESC"
-    cur = conn.execute(sql, params)
-    rows = []
-    for r in cur.fetchall():
-        sizes = [s.strip() for s in (r["sizes"] or "").split(",") if s.strip()]
-        rows.append({
-            "id": r["id"],
-            "title": r["title"],
-            "category": r["category"],
-            "subcategory": r["subcategory"],
-            "description": r["description"],
-            "price": r["price"],
-            "sizes": sizes,
-            "image_url": r["image_url"]
+        q += " AND category=?"; params.append(category)
+    if subcategory is not None:
+        if subcategory == "" or subcategory.lower() == "все":
+            q += " AND (subcategory='' OR subcategory IS NULL)"
+        else:
+            q += " AND subcategory=?"; params.append(subcategory)
+    q += " ORDER BY id DESC"
+
+    with _conn() as c:
+        cur = c.execute(q, tuple(params))
+        rows = cur.fetchall()
+
+    res = []
+    for pid, title, price, sizes, img in rows:
+        res.append({
+            "id": pid,
+            "title": title,
+            "price": int(price or 0),
+            "sizes": [s for s in (sizes or "").split(",") if s],
+            "image_url": img
         })
-    conn.close()
-    return rows
+    return res
 
 def get_product(pid: int):
-    conn = get_conn()
-    conn.row_factory = sqlite3.Row
-    cur = conn.execute("SELECT * FROM products WHERE id=?", (pid,))
-    r = cur.fetchone()
-    conn.close()
-    if not r:
-        return None
+    with _conn() as c:
+        cur = c.execute("SELECT id,title,price,sizes,image_url FROM products WHERE id=?", (pid,))
+        r = cur.fetchone()
+    if not r: return None
     return {
-        "id": r["id"],
-        "title": r["title"],
-        "category": r["category"],
-        "subcategory": r["subcategory"],
-        "description": r["description"],
-        "price": r["price"],
-        "sizes": [s.strip() for s in (r["sizes"] or "").split(",") if s.strip()],
-        "image_url": r["image_url"]
+        "id": r[0],
+        "title": r[1],
+        "price": int(r[2] or 0),
+        "sizes": [s for s in (r[3] or "").split(",") if s],
+        "image_url": r[4]
     }
 
-def create_order(user_id, username, full_name, phone, address, comment, total_price, items):
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("""
-      INSERT INTO orders (user_id, username, full_name, phone, address, comment, total_price)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (user_id, username, full_name, phone, address, comment, total_price))
-    oid = cur.lastrowid
-    for it in items:
+def create_order(user_id, username, full_name, phone, address, comment, telegram, total_price, items):
+    with _conn() as c:
+        cur = c.cursor()
         cur.execute("""
-          INSERT INTO order_items (order_id, product_id, size, qty, price)
-          VALUES (?, ?, ?, ?, ?)
-        """, (oid, it["product_id"], it.get("size",""), it["qty"], it["price"]))
-    conn.commit()
-    conn.close()
+            INSERT INTO orders (created_at,user_id,username,full_name,phone,address,comment,telegram,total_price,items_json)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
+        """, (
+            int(time.time()), user_id, username, full_name, phone, address, comment, telegram,
+            int(total_price or 0), json.dumps(items, ensure_ascii=False)
+        ))
+        oid = cur.lastrowid
+        c.commit()
     return oid
