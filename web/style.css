@@ -1,33 +1,40 @@
 :root{
   --bg:#fff; --text:#0b0b0c; --muted:#7a7d85; --pill:#f0f2f5; --accent:#111; --br:18px;
-  --ring:rgba(0,0,0,.08);
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,system-ui}
-.container{max-width:860px;margin:0 auto;padding:16px 16px 96px}
+.container{max-width:860px;margin:0 auto;padding:16px 16px 110px} /* + отступ под нижнюю панель */
+
 .topbar{position:sticky;top:0;z-index:5;background:var(--bg);display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #eee}
 .brand .logo{font-weight:800;letter-spacing:.06em;font-size:28px}
 .brand .muted{display:block;color:var(--muted);font-size:12px;margin-top:2px}
 .icon-btn{position:relative;display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:12px;border:1px solid #eee;background:#fafafa;cursor:pointer}
 .icon-btn:active{transform:scale(.98)}
 .cart-badge{position:absolute;right:-6px;top:-6px;font-size:12px;background:#111;color:#fff;border-radius:999px;padding:2px 6px;min-width:18px;text-align:center}
+
 .h{margin:4px 0 10px 0}
 .block{background:#fff;border-radius:var(--br)}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 10px}
 .chips.slim{margin-top:-4px}
 .chip{padding:9px 12px;border-radius:999px;background:var(--pill);color:var(--text);border:1px solid transparent;cursor:pointer;font-size:14px}
 .chip.active{background:#111;color:#fff}
+
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:480px){ .grid{grid-template-columns:1fr} }
+
 .card{border:1px solid #eee;border-radius:16px;padding:14px;background:#fff;display:flex;flex-direction:column;gap:10px}
 .card h4{margin:0}
 .price{font-weight:800;font-size:20px}
 .select{width:100%;padding:10px 12px;border:1px solid #e5e7eb;border-radius:12px;background:#fafafa}
 .btn{width:100%;padding:12px 14px;border-radius:12px;border:0;background:#111;color:#fff;font-weight:700;cursor:pointer}
 .btn:active{transform:translateY(1px)}
-.bottom-bar{position:fixed;left:0;right:0;bottom:0;background:linear-gradient(180deg, rgba(255,255,255,0) 0%, #fff 30%);padding:10px 16px 16px}
-.bottom-bar .primary{width:100%}
 
-.primary{background:#111;color:#fff;border:0;border-radius:14px;padding:12px 16px;font-weight:700}
+.bottom-bar{position:fixed;left:0;right:0;bottom:0;background:linear-gradient(180deg,rgba(255,255,255,0) 0%, #fff 30%);padding:10px 16px 16px}
+.bottom-bar .row{display:flex;gap:10px}
+.primary{background:#111;color:#fff;border:0;border-radius:14px;padding:12px 16px;font-weight:700;flex:1}
+.secondary{background:#f3f4f6;color:#111;border:0;border-radius:14px;padding:12px 16px;font-weight:600;flex:1}
+.primary:disabled{opacity:.5;cursor:not-allowed}
+
 .ghost{background:#f3f4f6;border:0;border-radius:14px;padding:12px 16px}
 .sheet{padding:16px;border:0;border-radius:16px;max-width:860px;width:min(92vw,560px)}
 dialog{border:0;background:transparent}
@@ -37,6 +44,6 @@ input,textarea{width:100%;margin-top:6px;padding:11px 12px;border:1px solid #e5e
 .sheet-row{display:flex;gap:10px;justify-content:space-between;align-items:center;margin-top:12px}
 .cart-line{display:flex;justify-content:space-between;gap:10px;padding:10px;border:1px solid #eee;border-radius:12px;background:#fafafa}
 .total{font-weight:800}
-@media (max-width:480px){
-  .grid{grid-template-columns:1fr}
-}
+
+/* на всякий случай вырубаем старые плавающие/боковые элементы */
+.fab,.float-cart,.left-cart,.side-cart,.bottom-chips,.chips-legacy,.chip-row{display:none!important}
