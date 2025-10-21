@@ -12,23 +12,32 @@ from aiogram.types import (
     InlineKeyboardButton, WebAppInfo
 )
 from aiogram.fsm.context import FSMContext
-from aiogram.client.default import DefaultBotProperties   # <— добавили
+from aiogram.client.default import DefaultBotProperties
 from dotenv import load_dotenv
 
 from aiohttp import web
 
-from db import get_categories, get_products, get_product, create_order
+# добавили get_subcategories
+from db import get_categories, get_products, get_product, create_order, get_subcategories
 
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", "0"))
-WEBAPP_URL = os.getenv("WEBAPP_URL", "")  # e.g., https://<your-railway-domain>/web/
+
+# нормализуем WEBAPP_URL (добавим https:// и / если их забыли)
+WEBAPP_URL = (os.getenv("WEBAPP_URL") or "").strip()
+if WEBAPP_URL:
+    if not WEBAPP_URL.startswith(("http://", "https://")):
+        WEBAPP_URL = "https://" + WEBAPP_URL.lstrip("/")
+    if not WEBAPP_URL.endswith("/"):
+        WEBAPP_URL += "/"
+
 PORT = int(os.getenv("PORT", "8000"))
 
 logging.basicConfig(level=logging.INFO)
 
-# === ИСПРАВЛЕНО: инициализация бота под aiogram 3.7+ ===
+# aiogram 3.7+: parse_mode через DefaultBotProperties
 bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher()
 
@@ -36,9 +45,17 @@ dp = Dispatcher()
 async def api_categories(request):
     return web.json_response(get_categories())
 
+# НОВОЕ: подкатегории для выбранной категории
+async def api_subcategories(request):
+    cat = request.rel_url.query.get("category")
+    if not cat:
+        return web.json_response([])
+    return web.json_response(get_subcategories(cat))
+
 async def api_products(request):
     cat = request.rel_url.query.get("category")
-    return web.json_response(get_products(cat))
+    sub = request.rel_url.query.get("subcategory")
+    return web.json_response(get_products(cat, sub))
 
 async def index_handler(request):
     return web.FileResponse(os.path.join("web", "index.html"))
@@ -50,7 +67,7 @@ async def file_handler(request):
         return web.Response(status=404, text="Not found")
     return web.FileResponse(full)
 
-# Optional fallback API order (if not using Telegram sendData)
+# Optional fallback API order (если вдруг решишь слать заказ не через sendData)
 async def api_order(request):
     data = await request.json()
     # Validate items and recompute total
@@ -77,6 +94,7 @@ def build_app():
     app.router.add_get("/", index_handler)
     app.router.add_get("/web/{path:.*}", file_handler)
     app.router.add_get("/api/categories", api_categories)
+    app.router.add_get("/api/subcategories", api_subcategories)  # ← НОВОЕ
     app.router.add_get("/api/products", api_products)
     app.router.add_post("/api/order", api_order)
     return app
