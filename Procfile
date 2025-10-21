@@ -1,1 +1,1 @@
-web: python bot.py
+web: ./.venv/bin/python bot.py
