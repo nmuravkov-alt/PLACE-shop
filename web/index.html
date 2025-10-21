@@ -2,91 +2,76 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-  <title>LAYOUTPLACE SHOP</title>
-  <link rel="stylesheet" href="./style.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LAYOUTPLACE Shop</title>
+  <link rel="stylesheet" href="/web/style.css" />
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
-      <span class="logo">LAYOUTPLACE</span>
-      <span class="muted">SHOP</span>
+      <div class="brand-title">LAYOUTPLACE Shop</div>
+      <div class="brand-sub">минимализм • ч/б</div>
     </div>
-
-    <!-- единственная корзина справа -->
-    <button id="openCart" class="icon-btn" aria-label="Корзина">
-      🛒
-      <span class="cart-badge" id="cartQty">0</span>
+    <button id="cartBtn" class="cart-btn" title="Корзина">
+      🛒 <span id="cartCount">0</span>
     </button>
   </header>
 
   <main class="container">
-    <section class="block">
-      <h2 class="h">Товары</h2>
+    <section id="categories" class="categories"></section>
 
-      <!-- категории -->
-      <div id="cats" class="chips"></div>
-      <!-- подкатегории -->
-      <div id="subcats" class="chips slim"></div>
+    <div class="filters">
+      <select id="subSelect" class="sub-select" hidden></select>
+    </div>
 
-      <!-- список товаров -->
-      <div id="grid" class="grid"></div>
-    </section>
+    <section id="grid" class="grid"></section>
   </main>
 
-  <!-- нижняя фиксированная панель -->
-  <div class="bottom-bar">
-    <div class="row">
-      <button id="contactAction" class="secondary">Написать</button>
-      <button id="primaryAction" class="primary">Оформить</button>
-    </div>
-  </div>
+  <!-- fixed bottom bar -->
+  <footer class="bottom">
+    <button id="contactBtn" class="ghost">Написать</button>
+    <button id="checkoutBtn" class="primary" disabled>Оформить</button>
+  </footer>
 
-  <!-- модалка оформления -->
-  <dialog id="checkout">
-    <form id="orderForm" method="dialog" class="sheet">
+  <!-- checkout modal -->
+  <dialog id="checkoutModal" class="modal">
+    <form id="orderForm" method="dialog">
       <h3>Оформление заказа</h3>
 
       <label>ФИО
-        <input required name="full_name" placeholder="Иван Иванов">
+        <input id="fio" name="full_name" type="text" placeholder="Иванов Иван" required />
       </label>
 
-      <label>Телефон (+7)
-        <input required name="phone" pattern="^\\+7\\d{10}$" placeholder="+7XXXXXXXXXX">
+      <label>Телефон (+7XXXXXXXXXX)
+        <input id="phone" name="phone" type="tel"
+               inputmode="tel"
+               autocomplete="tel"
+               placeholder="+7XXXXXXXXXX"
+               pattern="^\+7\d{10}$"
+               required />
+        <small class="hint">Формат: +7 и ещё 10 цифр (например, +79991234567)</small>
       </label>
 
-      <label>Адрес / пункт СДЭК
-        <textarea required name="address" rows="2" placeholder="Город, улица, дом / код СДЭК"></textarea>
+      <label>Адрес / СДЭК
+        <input id="address" name="address" type="text" placeholder="Город, пункт СДЭК / адрес" required />
       </label>
 
       <label>Комментарий к заказу (размер)
-        <textarea name="comment" rows="2" placeholder="Размер/примечания…"></textarea>
+        <textarea id="comment" name="comment" rows="2" placeholder="Например: свитшот — L"></textarea>
       </label>
 
       <label>Telegram (для связи с Вами)
-        <input name="telegram" placeholder="@username">
+        <input id="telegram" name="telegram" type="text" placeholder="@username" />
       </label>
 
-      <div class="sheet-row">
-        <button type="button" id="closeCheckout" class="ghost">Отмена</button>
-        <button type="submit" class="primary">Отправить</button>
+      <div class="row actions">
+        <button id="cancelOrder" type="button" class="ghost">Отмена</button>
+        <button id="sendOrder" type="submit" class="primary">Отправить</button>
       </div>
     </form>
   </dialog>
 
-  <!-- модалка корзины -->
-  <dialog id="cartDialog">
-    <div class="sheet">
-      <h3>Корзина</h3>
-      <div id="cartList" class="cart-list"></div>
-      <div class="sheet-row">
-        <div id="cartTotal" class="total">Итого: 0 ₽</div>
-        <button id="toCheckout" class="primary">Оформить</button>
-      </div>
-    </div>
-  </dialog>
-
-  <script src="./app.js"></script>
+  <script src="/web/app.js" type="module"></script>
 </body>
 </html>
