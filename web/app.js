@@ -1,205 +1,224 @@
-const tg = window.Telegram.WebApp;
-tg.expand();
+// ====== базовые вещи ======
+const tg = window.Telegram?.WebApp;
+tg?.ready();
+tg?.expand();
 
-const api = {
-  async json(url) {
-    const r = await fetch(url);
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    return r.json();
-  },
-  categories: () => api.json("/api/categories"),
-  subcategories: (category) => api.json("/api/subcategories?category=" + encodeURIComponent(category)),
-  products: (params) => {
-    const qs = new URLSearchParams(params || {});
-    return api.json("/api/products?" + qs.toString());
-  }
-};
+const $ = (s, el=document) => el.querySelector(s);
+const $$ = (s, el=document) => [...el.querySelectorAll(s)];
 
-// --- State ---
+// API
+async function jget(url){ const r = await fetch(url); if(!r.ok) throw new Error(url); return r.json(); }
+async function jpost(url, data){ const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); return r.json().catch(()=>({})); }
+
+// ====== состояние ======
 let state = {
-  view: "categories", // categories | subcategories | products | cart | checkout
-  category: null,
-  subcategory: null,
-  cart: [] // {product_id, title, price, size, qty, image_url}
+  cat: null,
+  sub: null,
+  products: [],
+  cart: [] // {id, title, price, size, qty}
 };
 
-const $ = (sel) => document.querySelector(sel);
-function page(html) { $("#app").innerHTML = html; }
-function grid(items){ return `<div class="grid">${items.join("")}</div>`; }
-
-function topbar(title, onBack) {
-  return `
-    <div class="topbar">
-      ${onBack ? `<button class="back" id="backBtn">←</button>` : '<div></div>'}
-      <div class="title">${title}</div>
-      <div class="r">
-        <button class="cart" id="cartBtn">🛒</button>
-      </div>
-    </div>
-  `;
+function setCartBadge(){
+  const n = state.cart.reduce((a,x)=>a+x.qty,0);
+  $("#cartQty").textContent = n;
 }
 
-async function showCategories() {
-  state.view = "categories"; state.category = null; state.subcategory = null;
-  const cats = await api.categories();
-  const items = cats.map(c =>
-    `<div class="card cat" data-cat="${c}">
-       <img src="/web/placeholder_clothes.jpg" alt="">
-       <div class="name">${c}</div>
-     </div>`);
-  page(`${topbar("PLACE", null)}<div class="pad">${grid(items)}</div>`);
-  bindCommon();
-  document.querySelectorAll(".card.cat").forEach(el => {
-    el.addEventListener("click", async () => {
-      state.category = el.dataset.cat;
-      const subs = await api.subcategories(state.category);
-      if (subs.length) showSubcategories(); else showProducts();
+// ====== рендер категорий / подкатегорий ======
+async function loadCategories(){
+  const cats = await jget('/api/categories'); // [{name, image}]
+  const wrap = $("#cats"); wrap.innerHTML = '';
+  cats.forEach(c=>{
+    const b = document.createElement('button');
+    b.className = 'chip' + (state.cat===c.name?' active':'');
+    b.textContent = c.name;
+    b.onclick = ()=>{ state.cat=c.name; state.sub=null; renderCats(); loadSubcategories(); loadProducts(); };
+    wrap.appendChild(b);
+  });
+  function renderCats(){
+    $$('#cats .chip').forEach(el=>el.classList.toggle('active', el.textContent===state.cat));
+  }
+  if (!state.cat && cats[0]) { state.cat = cats[0].name; renderCats(); }
+}
+
+async function loadSubcategories(){
+  const wrap = $("#subcats"); wrap.innerHTML = '';
+  if(!state.cat) return;
+
+  // бекенд должен отдавать список подкатегорий
+  // если его нет — просто скрываем блок
+  let subs = [];
+  try { subs = await jget('/api/subcategories?category='+encodeURIComponent(state.cat)); }
+  catch{ /* нет эндпойнта — ничего страшного */ }
+
+  if (!subs || subs.length===0){ wrap.style.display='none'; return; }
+  wrap.style.display='flex';
+
+  const allBtn = document.createElement('button');
+  allBtn.className = 'chip' + (!state.sub?' active':'');
+  allBtn.textContent = 'Все';
+  allBtn.onclick = ()=>{ state.sub=null; renderSubs(); loadProducts(); };
+  wrap.appendChild(allBtn);
+
+  subs.forEach(s=>{
+    const b = document.createElement('button');
+    b.className = 'chip' + (state.sub===s ? ' active':'');
+    b.textContent = s;
+    b.onclick = ()=>{ state.sub=s; renderSubs(); loadProducts(); };
+    wrap.appendChild(b);
+  });
+
+  function renderSubs(){
+    $$('#subcats .chip').forEach(el=>{
+      el.classList.toggle('active',
+        (!state.sub && el.textContent==='Все') || (state.sub && el.textContent===state.sub)
+      );
     });
+  }
+}
+
+// ====== рендер товаров ======
+async function loadProducts(){
+  const params = new URLSearchParams();
+  if(state.cat) params.set('category', state.cat);
+  if(state.sub) params.set('subcategory', state.sub);
+
+  state.products = await jget('/api/products?'+params.toString());
+  renderProducts();
+}
+
+function renderProducts(){
+  const g = $("#grid"); g.innerHTML = '';
+  state.products.forEach(p=>{
+    const card = document.createElement('div');
+    card.className = 'card';
+
+    const img = document.createElement('img');
+    img.src = p.image || (p.category === 'Одежда' ? './placeholder_clothes.jpg' : './placeholder_acc.jpg');
+    img.alt = p.title; img.style.width='100%'; img.style.borderRadius='12px';
+    card.appendChild(img);
+
+    const h4 = document.createElement('h4');
+    h4.textContent = p.title; card.appendChild(h4);
+
+    const price = document.createElement('div');
+    price.className = 'price'; price.textContent = `${p.price.toLocaleString('ru-RU')} ₽`;
+    card.appendChild(price);
+
+    // sizes
+    const sizes = (p.sizes || '').split('|').map(s=>s.trim()).filter(Boolean);
+    const sel = document.createElement('select');
+    sel.className = 'select';
+    if (sizes.length) sizes.forEach(s=>{
+      const o = document.createElement('option'); o.value=s; o.textContent=s; sel.appendChild(o);
+    }); else {
+      const o = document.createElement('option'); o.value=''; o.textContent='—'; sel.appendChild(o);
+    }
+    card.appendChild(sel);
+
+    const btn = document.createElement('button');
+    btn.className='btn'; btn.textContent='В корзину';
+    btn.onclick = ()=> addToCart(p, sel.value || '');
+    card.appendChild(btn);
+
+    g.appendChild(card);
   });
 }
 
-async function showSubcategories() {
-  state.view = "subcategories";
-  const subs = await api.subcategories(state.category);
-  const items = subs.map(s =>
-    `<div class="card sub" data-sub="${s}">
-       <img src="/web/placeholder_acc.jpg" alt="">
-       <div class="name">${s}</div>
-     </div>`);
-  page(`${topbar(state.category, () => showCategories())}<div class="pad">${grid(items)}</div>`);
-  bindCommon(true);
-  document.querySelectorAll(".card.sub").forEach(el => {
-    el.addEventListener("click", () => {
-      state.subcategory = el.dataset.sub;
-      showProducts();
-    });
-  });
+function addToCart(p, size){
+  const same = state.cart.find(i=>i.id===p.id && i.size===size);
+  if(same) same.qty += 1;
+  else state.cart.push({id:p.id,title:p.title,price:p.price,size,qty:1});
+
+  setCartBadge();
+  toast('Добавлено в корзину');
 }
 
-async function showProducts() {
-  state.view = "products";
-  const products = await api.products({
-    category: state.category || "",
-    subcategory: state.subcategory || ""
-  });
-
-  const cards = products.map(p => {
-    const sizes = (p.sizes && p.sizes.length ? p.sizes : ["—"]).map(s => `<option value="${s}">${s}</option>`).join("");
-    return `
-      <div class="pitem" data-id="${p.id}">
-        <img class="pimg" src="${p.image_url || '/web/placeholder_acc.jpg'}" alt="">
-        <div class="ptitle">${p.title}</div>
-        <div class="pprice">${p.price} ₽</div>
-        <select class="psize">${sizes}</select>
-        <button class="add">В корзину</button>
-      </div>
-    `;
-  }).join("");
-
-  page(`
-    ${topbar(state.subcategory || state.category || "Товары", () => {
-      if (state.subcategory) { state.subcategory = null; showCategories(); }
-      else showCategories();
-    })}
-    <div class="pad products">${cards || '<div class="empty">Пока пусто</div>'}</div>
-  `);
-
-  bindCommon(true);
-  document.querySelectorAll(".pitem .add").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const el = btn.closest(".pitem");
-      const id = Number(el.dataset.id);
-      const title = el.querySelector(".ptitle").textContent;
-      const price = Number(el.querySelector(".pprice").textContent.replace(/\D/g,""));
-      const size = el.querySelector(".psize").value || "";
-      const img = el.querySelector(".pimg").src;
-
-      const existing = state.cart.find(i => i.product_id === id && i.size === size);
-      if (existing) existing.qty += 1;
-      else state.cart.push({product_id: id, title, price, size, qty: 1, image_url: img});
-
-      tg.HapticFeedback.notificationOccurred("success");
-    });
-  });
+function toast(t){
+  if (tg) { tg.showPopup({title:'', message:t, buttons:[{type:'close'}]}); return; }
+  console.log(t);
 }
 
-function showCart() {
-  state.view = "cart";
-  const items = state.cart.map((i, idx) => `
-    <div class="citem">
-      <img src="${i.image_url}" alt="">
-      <div class="cmain">
-        <div class="ctitle">${i.title} ${i.size ? `(${i.size})` : ""}</div>
-        <div class="crow">
-          <button class="dec" data-idx="${idx}">−</button>
-          <div class="qty">${i.qty}</div>
-          <button class="inc" data-idx="${idx}">+</button>
-          <div class="price">${i.price * i.qty} ₽</div>
+// ====== корзина / оформление ======
+function openCart(){
+  const list = $("#cartList"); list.innerHTML='';
+  if(state.cart.length===0){
+    list.innerHTML = '<div class="muted">Пока пусто</div>';
+  } else {
+    state.cart.forEach((it,idx)=>{
+      const line = document.createElement('div');
+      line.className='cart-line';
+      line.innerHTML = `
+        <div>
+          <div><b>${it.title}</b></div>
+          <div class="muted">${it.size || '—'} × ${it.qty}</div>
         </div>
-      </div>
-    </div>`).join("");
-  const total = state.cart.reduce((s,i)=>s+i.price*i.qty,0);
-
-  page(`
-    ${topbar("Корзина", () => showProducts())}
-    <div class="pad">${items || '<div class="empty">Корзина пуста</div>'}</div>
-    <div class="bottom">
-      <div class="total">Итого: <b>${total} ₽</b></div>
-      <button id="toCheckout" ${total? "": "disabled"}>Оформить</button>
-    </div>
-  `);
-  bindCommon(true);
-
-  $(".bottom #toCheckout")?.addEventListener("click", showCheckout);
-  document.querySelectorAll(".inc,.dec").forEach(b=>{
-    b.addEventListener("click", ()=>{
-      const idx = Number(b.dataset.idx);
-      if (b.classList.contains("inc")) state.cart[idx].qty += 1;
-      else state.cart[idx].qty = Math.max(0, state.cart[idx].qty - 1);
-      state.cart = state.cart.filter(i=>i.qty>0);
-      showCart();
+        <div><b>${(it.qty*it.price).toLocaleString('ru-RU')} ₽</b></div>
+      `;
+      line.onclick = () => { // уменьшить по тапу
+        it.qty -= 1;
+        if(it.qty<=0) state.cart.splice(idx,1);
+        setCartBadge(); openCart();
+      };
+      list.appendChild(line);
     });
-  });
+  }
+  const total = state.cart.reduce((a,x)=>a+x.qty*x.price,0);
+  $("#cartTotal").textContent = `Итого: ${total.toLocaleString('ru-RU')} ₽`;
+  $("#cartDialog").showModal();
 }
 
-function showCheckout() {
-  state.view = "checkout";
-  const total = state.cart.reduce((s,i)=>s+i.price*i.qty,0);
-  page(`
-    ${topbar("Оформление", () => showCart())}
-    <div class="pad form">
-      <input id="fio" placeholder="ФИО">
-      <input id="phone" placeholder="Телефон">
-      <input id="addr" placeholder="Адрес/СДЭК">
-      <textarea id="comment" placeholder="Комментарий (необязательно)"></textarea>
-    </div>
-    <div class="bottom">
-      <div class="total">Итого: <b>${total} ₽</b></div>
-      <button id="pay" ${total? "": "disabled"}>Отправить заказ</button>
-    </div>
-  `);
-  bindCommon(true);
-  $("#pay").addEventListener("click", ()=>{
-    const payload = {
-      full_name: $("#fio").value.trim(),
-      phone: $("#phone").value.trim(),
-      address: $("#addr").value.trim(),
-      comment: $("#comment").value.trim(),
-      items: state.cart.map(i => ({ product_id:i.product_id, size:i.size, qty:i.qty }))
-    };
-    tg.sendData(JSON.stringify(payload));
-    tg.close();
-  });
+function toCheckout(){
+  $("#cartDialog").close();
+  if(state.cart.length===0){ toast('Корзина пуста'); return; }
+  $("#checkout").showModal();
 }
 
-function bindCommon(){
-  $("#cartBtn")?.addEventListener("click", showCart);
-  $("#backBtn")?.addEventListener("click", ()=>{
-    if (state.view === "subcategories") showCategories();
-    else if (state.view === "products") showCategories();
-    else if (state.view === "cart") showProducts();
-    else if (state.view === "checkout") showCart();
-  });
+function closeCheckout(){ $("#checkout").close(); }
+
+async function submitOrder(e){
+  e.preventDefault();
+  if(state.cart.length===0){ toast('Корзина пуста'); return; }
+
+  const fd = new FormData(e.target);
+  const payload = {
+    full_name: fd.get('full_name')?.trim(),
+    phone: fd.get('phone')?.trim(),
+    address: fd.get('address')?.trim(),
+    comment: fd.get('comment')?.trim(),
+    items: state.cart.map(x=>({
+      product_id: x.id, size: x.size, qty: x.qty
+    }))
+  };
+
+  // 1) отправляем в бот (обработчик F.web_app_data)
+  try { tg?.sendData(JSON.stringify(payload)); } catch{}
+
+  // 2) дублируем на бекенд как резерв
+  try { await jpost('/api/order', payload); } catch{}
+
+  // локальная очистка
+  state.cart = []; setCartBadge();
+  $("#checkout").close();
+
+  toast('Заказ отправлен. Мы свяжемся с вами!');
 }
 
-document.addEventListener("DOMContentLoaded", showCategories);
+// ====== listeners ======
+$("#openCart").onclick = openCart;
+$("#toCheckout").onclick = toCheckout;
+$("#closeCheckout").onclick = closeCheckout;
+$("#orderForm").addEventListener('submit', submitOrder);
+$("#primaryAction").onclick = toCheckout;
+
+// старт
+(async function init(){
+  try{
+    await loadCategories();
+    await loadSubcategories();
+    await loadProducts();
+  }catch(e){
+    console.error(e);
+    toast('Ошибка загрузки каталога');
+  }
+  setCartBadge();
+})();
