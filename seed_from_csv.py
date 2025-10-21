@@ -3,14 +3,21 @@ import csv, sqlite3
 DB_PATH = "data.sqlite"
 
 def upsert_product(row, cur):
-    title       = row.get("title","").strip()
-    category    = row.get("category","").strip()
-    subcategory = row.get("subcategory","").strip()
-    description = row.get("description","").strip()
-    price       = int(float(row.get("price","0")))
-    sizes       = ",".join([s.strip() for s in row.get("sizes","").split(",") if s.strip()])
-    image_url   = row.get("image_url","").strip()
-    is_active   = int(row.get("is_active","1") or 1)
+    title       = (row.get("title") or "").strip()
+    category    = (row.get("category") or "").strip()
+    subcategory = (row.get("subcategory") or "").strip()
+    description = (row.get("description") or "").strip()
+    price_raw   = (row.get("price") or "0").replace(",", ".")
+    try:
+        price = int(float(price_raw))
+    except:
+        price = 0
+    sizes       = ",".join([s.strip() for s in (row.get("sizes") or "").split(",") if s.strip()])
+    image_url   = (row.get("image_url") or "").strip()
+    is_active   = int(row.get("is_active") or 1)
+
+    if not title or not category:
+        return
 
     cur.execute("""
       INSERT INTO products (title, category, subcategory, description, price, sizes, image_url, is_active)
