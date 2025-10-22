@@ -1,18 +1,20 @@
+// web/app.js
 const tg = window.Telegram?.WebApp;
 tg?.ready();
 
-// ========= Константы проекта =========
-const API = ""; // относительные пути к бекенду
-const MANAGER_ID = 6773668793; // tg://user?id=...
+/** ========= Константы ========= */
+const API = "";                         // корень (оставляем пустым: /api/*)
+const MANAGER_ID = 6773668793;          // tg://user?id=...
 const CLOTHES_SIZES = ["XS","S","M","L","XL","XXL"];
 const SHOES_SIZES   = ["36","37","38","39","40","41","42","43","44","45"];
 
-// ========= Состояние =========
+/** ========= Состояние ========= */
 let state = {
   category: null,
-  cart: [] // [{id,title,price,size,qty}]
+  cart: [] // [{key,id,title,price,size,qty}]
 };
 
+/** ========= DOM ========= */
 const $ = (sel) => document.querySelector(sel);
 const categoriesEl = $("#categories");
 const productsEl   = $("#products");
@@ -23,18 +25,39 @@ const checkoutBtn  = $("#checkoutBtn");
 const sheet        = $("#sheet");
 const backdrop     = $("#backdrop");
 
-// ========= Утилиты =========
+/** ========= Утилиты ========= */
+function lockScroll(lock) {
+  if (lock) {
+    document.body.dataset.scrollY = String(window.scrollY || 0);
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${document.body.dataset.scrollY}px`;
+    document.body.style.left = "0";
+    document.body.style.right = "0";
+    document.body.style.width = "100%";
+  } else {
+    const y = parseInt(document.body.dataset.scrollY || "0", 10);
+    document.body.style.position = "";
+    document.body.style.top = "";
+    document.body.style.left = "";
+    document.body.style.right = "";
+    document.body.style.width = "";
+    window.scrollTo(0, y);
+  }
+}
 function openSheet(html) {
   sheet.innerHTML = html;
   sheet.classList.remove("hidden");
   backdrop.classList.remove("hidden");
+  lockScroll(true);
   backdrop.onclick = closeSheet;
 }
 function closeSheet() {
   sheet.classList.add("hidden");
   backdrop.classList.add("hidden");
   sheet.innerHTML = "";
+  lockScroll(false);
 }
+function money(n){ return (n||0).toLocaleString("ru-RU") + " ₽"; }
 function updateCartBadge() {
   const n = state.cart.reduce((s,i)=>s+i.qty,0);
   cartCount.textContent = n;
@@ -45,46 +68,45 @@ function addToCart(p, size) {
   if (f) f.qty += 1;
   else state.cart.push({ key, id:p.id, title:p.title, price:p.price, size:size||"", qty:1 });
   updateCartBadge();
+  tg?.HapticFeedback?.impactOccurred("medium");
 }
-function money(n){ return (n||0).toLocaleString('ru-RU') + " ₽"; }
 
-// ========= API =========
+/** ========= API ========= */
 async function getJSON(url){
-  const r = await fetch(url);
+  const r = await fetch(url, { credentials: "same-origin" });
   if(!r.ok) throw new Error("HTTP "+r.status);
   return r.json();
 }
-
 async function loadCategories(){
   const data = await getJSON(`${API}/api/categories`);
-  // поддержка форматов: ["А", "B"] или [{title,image_url}]
   return (data||[]).map(c => (typeof c==="string") ? {title:c} : {title:c.title, image_url:c.image_url||""});
 }
 async function loadProducts(category, sub=""){
-  const u = new URL(`${API}/api/products`, location.origin);
-  if (category)   u.searchParams.set("category", category);
+  const u = new URL(`${API}/api/products`, window.location.origin);
+  if (category)    u.searchParams.set("category", category);
   if (sub != null) u.searchParams.set("subcategory", sub);
   return getJSON(u);
 }
 
-// ========= Рендер =========
+/** ========= Рендер ========= */
 function renderCategories(list){
   categoriesEl.innerHTML = "";
-  const grid = document.createDocumentFragment();
+  const frag = document.createDocumentFragment();
   list.forEach(cat=>{
     const div = document.createElement("div");
     div.className = "cat";
     div.textContent = cat.title;
     div.onclick = () => { state.category = cat.title; drawProducts(); };
-    grid.appendChild(div);
+    frag.appendChild(div);
   });
-  categoriesEl.appendChild(grid);
+  categoriesEl.appendChild(frag);
 }
+
 async function drawProducts(){
   productsEl.innerHTML = "";
   const items = await loadProducts(state.category || "");
   items.forEach(p=>{
-    // вычислим набор размеров: если sizes_text есть — используем его; если категория «Обувь» — цифры; иначе — одежда
+    // выбираем размеры
     let sizes = [];
     if (p.sizes_text) {
       sizes = String(p.sizes_text).split(",").map(s=>s.trim()).filter(Boolean);
@@ -113,13 +135,12 @@ async function drawProducts(){
     $("#btn-"+p.id).onclick = () => {
       const sz = $("#size-"+p.id).value;
       addToCart(p, sz);
-      tg?.HapticFeedback?.impactOccurred("medium");
     };
   });
 }
 
-// ========= Корзина =========
-function openCart(){
+/** ========= Корзина ========= */
+function renderCartSheet() {
   if (state.cart.length === 0){
     openSheet(`<div class="row"><b>Корзина пуста</b></div>`);
     return;
@@ -131,20 +152,24 @@ function openCart(){
         <div>${money(it.price)} × ${it.qty}</div>
       </div>
       <div>
-        <button data-a="minus" data-i="${idx}">–</button>
-        <button data-a="plus"  data-i="${idx}">+</button>
-        <button data-a="rm"    data-i="${idx}">✕</button>
+        <button class="qty" data-a="minus" data-i="${idx}">–</button>
+        <button class="qty" data-a="plus"  data-i="${idx}">+</button>
+        <button class="qty" data-a="rm"    data-i="${idx}">✕</button>
       </div>
     </div>
   `).join("");
   const total = state.cart.reduce((s,i)=>s+i.price*i.qty,0);
+
   openSheet(`
     <h3>Корзина</h3>
     ${rows}
     <div class="row"><b>Итого:</b><b>${money(total)}</b></div>
     <button id="toCheckout" class="btn primary">Оформить</button>
   `);
-
+}
+function openCart(){
+  renderCartSheet();
+  // делегирование — работает и на iOS
   sheet.onclick = (e)=>{
     const a = e.target?.dataset?.a;
     if(!a) return;
@@ -153,9 +178,11 @@ function openCart(){
     if(a==="minus") state.cart[i].qty = Math.max(1, state.cart[i].qty-1);
     if(a==="rm")    state.cart.splice(i,1);
     updateCartBadge();
-    closeSheet(); openCart();
+    renderCartSheet();            // перерисовываем без закрытия
   };
-  $("#toCheckout").onclick = () => { closeSheet(); openCheckout(); };
+  sheet.querySelector("#toCheckout")?.addEventListener("click", () => {
+    openCheckout();
+  }, { once:true });
 }
 
 function openCheckout(){
@@ -193,7 +220,7 @@ function openCheckout(){
     const comm  = $("#comment");
     const tguser= $("#tguser");
 
-    // валидация телефона по маске +7XXXXXXXXXX
+    // строгая проверка телефона: +7XXXXXXXXXX (11 цифр)
     const okPhone = /^\+7\d{10}$/.test(phone.value.trim());
     [fio, phone].forEach(el=>el.classList.remove("bad"));
     if (!fio.value.trim()) { fio.classList.add("bad"); return; }
@@ -210,15 +237,16 @@ function openCheckout(){
       }))
     };
 
-    // отправляем в бота
+    // отправка в бота
     try { tg?.sendData?.(JSON.stringify(payload)); } catch(e){}
 
-    // резервно продублируем на backend
+    // резервная отправка на backend
     try {
       await fetch(`${API}/api/order`, {
         method: "POST",
         headers: {"Content-Type":"application/json"},
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        credentials: "same-origin"
       });
     } catch(e){}
 
@@ -227,9 +255,8 @@ function openCheckout(){
   };
 }
 
-// ========= Кнопки внизу =========
+/** ========= Кнопки ========= */
 writeBtn.onclick = () => {
-  // открываем чат с менеджером по id
   const url = `tg://user?id=${MANAGER_ID}`;
   if (tg?.openTelegramLink) tg.openTelegramLink(url);
   else window.location.href = url;
@@ -237,15 +264,20 @@ writeBtn.onclick = () => {
 checkoutBtn.onclick = () => openCheckout();
 cartBtn.onclick = () => openCart();
 
-// ========= Инициализация =========
+/** ========= Инициализация ========= */
 (async function init(){
   try {
     const cats = await loadCategories();
     renderCategories(cats);
     state.category = (cats[0]?.title) || null;
-  } catch(e){
-    // если категорий нет — просто не рендерим сетку (UI остаётся)
+  } catch(_) {
+    // категорий может не быть — ок
   }
   await drawProducts();
   updateCartBadge();
+
+  // ESC закрывает модалку
+  window.addEventListener("keydown", (e)=>{
+    if (e.key === "Escape" && !sheet.classList.contains("hidden")) closeSheet();
+  });
 })();
