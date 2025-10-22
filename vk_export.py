@@ -1,47 +1,15 @@
 # vk_export.py
-import csv, os, time, requests
+import csv, os, time, requests, sys
 
-# === настройка ===
-VK_TOKEN = os.getenv("VK_COMMUNITY_TOKEN", "")   # токен сообщества vk1.a....
-GROUP_ID = int(os.getenv("VK_GROUP_ID", "222108341"))  # 222108341 для @placexcom
-OWNER_ID = -GROUP_ID
-API_URL  = "https://api.vk.com/method/"
-API_V    = "5.199"
+VK_TOKEN  = os.getenv("VK_COMMUNITY_TOKEN", "").strip()
+GROUP_ID  = os.getenv("VK_GROUP_ID", "").strip()  # без 'public', просто число, напр. 222108341
+API_URL   = "https://api.vk.com/method/"
+API_V     = "5.199"
 
-# Жёсткие категории под твою витрину
-KNOWN = [
-    "Куртки/Бомберы",
-    "Толстовки/Свитера",
-    "Брюки/Джинсы",
-    "Сумки/Рюкзаки",
-    "Футболки/Лонгсливы/Рубашки",
-    "Шапки/Кепки",
-    "Шорты/Юбки",
-    "Обувь",
-    "Аксессуары",
-]
-CLOTHES = "XS,S,M,L,XL,XXL"
-SHOES   = ",".join(str(x) for x in range(36,46))
+CLOTHES_SIZES = "XS,S,M,L,XL,XXL"
+SHOES_SIZES   = ",".join(str(x) for x in range(36, 46))
 
-def vk(method, **params):
-    params.update({"access_token": VK_TOKEN, "v": API_V})
-    r = requests.get(API_URL+method, params=params, timeout=30).json()
-    if "error" in r:
-        raise RuntimeError(f"VK error {r['error'].get('error_code')}: {r['error'].get('error_msg')}")
-    return r["response"]
-
-def get_albums():
-    albums = {}
-    off = 0
-    while True:
-        resp = vk("market.getAlbums", owner_id=OWNER_ID, count=100, offset=off)
-        for a in resp.get("items", []):
-            albums[a["id"]] = a.get("title","")
-        off += 100
-        if off >= resp.get("count",0): break
-        time.sleep(0.35)
-    return albums
-
+# Маппинг категорий под твою витрину
 def map_category(album_title: str) -> str:
     t = (album_title or "").lower()
     if any(w in t for w in ["куртк","бомбер"]): return "Куртки/Бомберы"
@@ -55,29 +23,64 @@ def map_category(album_title: str) -> str:
     return "Аксессуары"
 
 def sizes_for(category: str, title: str, desc: str) -> str:
-    s = (title+" "+desc).lower()
-    if "one size" in s or "one-size" in s or "onesize" in s: return "ONE SIZE"
-    return SHOES if "обув" in (category.lower()) else CLOTHES
+    s = (title + " " + (desc or "")).lower()
+    if "one size" in s or "one-size" in s or "onesize" in s:
+        return "ONE SIZE"
+    return SHOES_SIZES if "обув" in category.lower() else CLOTHES_SIZES
 
-def export(csv_path="products_template.csv"):
-    if not VK_TOKEN:
-        raise SystemExit("Не указан VK_COMMUNITY_TOKEN")
-    albums = get_albums()
-    items_out = []
-    off = 0
+def vk(method, **params):
+    params.update({"access_token": VK_TOKEN, "v": API_V})
+    r = requests.get(API_URL + method, params=params, timeout=30)
+    data = r.json()
+    if "error" in data:
+        code = data["error"].get("error_code")
+        msg  = data["error"].get("error_msg")
+        raise RuntimeError(f"VK error {code}: {msg}")
+    return data["response"]
+
+def get_albums(owner_id: int):
+    albums = {}
+    offset = 0
     while True:
-        resp = vk("market.get", owner_id=OWNER_ID, count=200, offset=off)
+        resp = vk("market.getAlbums", owner_id=owner_id, count=100, offset=offset)
+        for a in resp.get("items", []):
+            albums[a["id"]] = a.get("title", "")
+        offset += 100
+        if offset >= resp.get("count", 0):
+            break
+        time.sleep(0.34)
+    return albums
+
+def main():
+    if not VK_TOKEN or not GROUP_ID.isdigit():
+        print("vk_export.py: пропуск — нет VK_COMMUNITY_TOKEN или VK_GROUP_ID", file=sys.stderr)
+        return  # мягко выходим, чтобы деплой не падал
+
+    group_num = int(GROUP_ID)
+    owner_id = -group_num  # для сообществ owner_id всегда отрицательный
+
+    try:
+        albums = get_albums(owner_id)
+    except Exception as e:
+        print(f"Не удалось получить альбомы: {e}", file=sys.stderr)
+        albums = {}
+
+    items_out = []
+    offset = 0
+    total = 0
+    while True:
+        resp = vk("market.get", owner_id=owner_id, count=200, offset=offset, extended=0)
+        total = resp.get("count", 0)
         for it in resp.get("items", []):
             title = (it.get("title") or "Товар").strip()
-            price = int(round((it.get("price",{}).get("amount",0) or 0)/100.0))
+            desc  = it.get("description") or ""
+            price = int(round((it.get("price", {}).get("amount", 0) or 0) / 100.0))
             album_id = (it.get("albums_ids") or [None])[0]
             album_title = albums.get(album_id, "") if album_id else ""
             category = map_category(album_title)
-            desc = it.get("description") or ""
             image = it.get("thumb_photo") or ""
             sizes = sizes_for(category, title, desc)
-            # availability: 0 — в наличии, 1 — удалён, 2 — недоступен, 3 — не публикуется
-            is_active = 1 if it.get("availability",0) == 0 else 0
+            is_active = 1 if it.get("availability", 0) == 0 else 0  # 0 — в наличии
 
             items_out.append({
                 "title": title,
@@ -88,16 +91,18 @@ def export(csv_path="products_template.csv"):
                 "sizes_text": sizes,
                 "is_active": is_active,
             })
-        off += 200
-        if off >= resp.get("count",0): break
-        time.sleep(0.35)
+        offset += 200
+        if offset >= total:
+            break
+        time.sleep(0.34)
 
-    fields = ["title","category","subcategory","price","image_url","sizes_text","is_active"]
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=fields)
+    with open("products_template.csv", "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=["title","category","subcategory","price","image_url","sizes_text","is_active"])
         w.writeheader()
-        for row in items_out: w.writerow(row)
-    print(f"Exported {len(items_out)} items → {csv_path}")
+        for row in items_out:
+            w.writerow(row)
+
+    print(f"Exported {len(items_out)} items → products_template.csv")
 
 if __name__ == "__main__":
-    export()
+    main()
