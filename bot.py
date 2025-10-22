@@ -15,12 +15,13 @@ load_dotenv()
 
 BOT_TOKEN  = os.getenv("BOT_TOKEN", "").strip()
 PORT       = int(os.getenv("PORT", "8000"))
-ADMIN_CHAT_IDS = [int(x) for x in (os.getenv("ADMIN_CHAT_IDS","6773668793").split(",")) if x.strip().isdigit()]
+# Менеджер по ТЗ
+ADMIN_CHAT_IDS = [int(x) for x in (os.getenv("ADMIN_CHAT_IDS", "6773668793").split(",")) if x.strip().isdigit()]
 
-# Нормализуем WEBAPP_URL и автоматически добавим /web/
-WEBAPP_URL = (os.getenv("WEBAPP_URL","").strip() or "").rstrip("/")
+# Нормализуем URL витрины
+WEBAPP_URL = os.getenv("WEBAPP_URL", "").strip().rstrip("/")
 if WEBAPP_URL:
-    if not WEBAPP_URL.startswith(("http://","https://")):
+    if not WEBAPP_URL.startswith(("http://", "https://")):
         WEBAPP_URL = "https://" + WEBAPP_URL.lstrip("/")
     WEBAPP_URL = WEBAPP_URL + "/web/"
 
@@ -32,26 +33,15 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp  = Dispatcher()
 
-# ---------------------- WEB ----------------------
+# -------------------- WEB --------------------
 async def index_handler(request):
     return web.FileResponse(op.join("web", "index.html"))
 
 async def file_handler(request):
-    # отдаем статические файлы из папки web/
-    raw = request.match_info.get("path", "")
-    # нормализуем путь
-    rel = raw.strip("/")
-    base = "web"
-    full = op.join(base, rel) if rel else base
-
-    # если путь пустой или указывает на каталог — отдаем index.html
-    if (not rel) or full.endswith("/") or op.isdir(full):
-        return web.FileResponse(op.join(base, "index.html"))
-
-    if not op.isfile(full):
+    p = op.join("web", request.match_info["path"])
+    if not op.isfile(p):
         return web.Response(status=404, text="Not found")
-
-    return web.FileResponse(full)
+    return web.FileResponse(p)
 
 async def api_categories(request):
     return web.json_response(get_categories())
@@ -65,7 +55,7 @@ async def api_products(request):
     sub = request.rel_url.query.get("subcategory")
     return web.json_response(get_products(cat, sub))
 
-# запасной REST, если вдруг sendData не сработал
+# запасной REST, если вдруг sendData не сработал у клиента
 async def api_order(request):
     data = await request.json()
     items, total = [], 0
@@ -77,6 +67,7 @@ async def api_order(request):
         size = (it.get("size") or "")
         items.append({"product_id": p["id"], "size": size, "qty": qty, "price": p["price"]})
         total += p["price"] * qty
+
     order_id = create_order(
         user_id=0, username=None,
         full_name=data.get("full_name"), phone=data.get("phone"),
@@ -88,23 +79,16 @@ async def api_order(request):
 
 def build_app():
     app = web.Application()
-    # корень отдаем index.html (для проверки в браузере)
-    app.router.add_get("/", index_handler)
-    # редирект на слеш
-    async def redirect_web(request):  # /web -> /web/
-        raise web.HTTPPermanentRedirect("/web/")
-    app.router.add_get("/web", redirect_web)
-    # статические файлы и index.html по /web/
-    app.router.add_get("/web/{path:.*}", file_handler)
-
-    # API
+    app.router.add_get("/", index_handler)                    # корень
+    app.router.add_get("/web/", index_handler)                # /web/
+    app.router.add_get("/web/{path:.*}", file_handler)        # /web/static
     app.router.add_get("/api/categories", api_categories)
     app.router.add_get("/api/subcategories", api_subcategories)
     app.router.add_get("/api/products", api_products)
     app.router.add_post("/api/order", api_order)
     return app
 
-# ---------------------- BOT ----------------------
+# -------------------- BOT --------------------
 @dp.message(Command("start"))
 async def start(m: Message):
     kb = InlineKeyboardMarkup(inline_keyboard=[[
@@ -145,8 +129,10 @@ async def on_webapp_data(m: Message):
         items=items_payload,
     )
 
+    # клиенту
     await m.answer(f"✅ Заказ №{order_id} оформлен.\n\n{THANKYOU_TEXT}")
 
+    # менеджеру(ам)
     if ADMIN_CHAT_IDS:
         uname = f"@{m.from_user.username}" if m.from_user.username else "—"
         buyer_link = f"<a href='tg://user?id={m.from_user.id}'>профиль</a>"
