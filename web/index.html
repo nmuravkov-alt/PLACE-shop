@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ru"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>LAYOUTPLACE Shop</title>
+<link rel="stylesheet" href="/web/style.css"/>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head><body>
+<header class="brand">
+  <div><h1>LAYOUTPLACE Shop</h1><div class="subtitle">минимализм • ч/б</div></div>
+  <button id="cartBtn" class="cart" onclick="openCart()">🛒 <span id="cartCount">0</span></button>
+</header>
+<main>
+  <section id="cats" class="cats"></section>
+  <section id="products" class="products"></section>
+</main>
+<footer class="actions">
+  <button class="ghost" onclick="writeManager()">Написать</button>
+  <button class="primary" onclick="openCheckout()">Оформить</button>
+</footer>
+<div id="modal" class="modal hidden">
+  <div class="modal__card">
+    <h3>Оформление заказа</h3>
+    <label>ФИО <input id="fio" placeholder="Иванов Иван"/></label>
+    <label>Телефон (+7XXXXXXXXXX) <input id="phone" placeholder="+7XXXXXXXXXX"/></label>
+    <label>Адрес/СДЭК <input id="address" placeholder="Город, пункт выдачи…"/></label>
+    <label>Комментарий к заказу (размер) <input id="comment" placeholder="Например: L, цвет черный"/></label>
+    <label>Telegram (для связи с Вами) <input id="telegram" placeholder="@username"/></label>
+    <div class="modal__row">
+      <button class="ghost" onclick="closeCheckout()">Отмена</button>
+      <button class="primary" onclick="submitOrder()">Отправить</button>
+    </div>
+    <div id="formError" class="error"></div>
+  </div>
+</div>
+<script src="/web/app.js"></script></body></html>
