@@ -1,5 +1,10 @@
-title,category,subcategory,price,image_url,sizes,is_active
-PLACE Shoes,Обувь,,9990,,ONE SIZE,1
-Бомбер Black,Куртки/Бомберы,,18990,,XS,S,M,L,XL,XXL,1
-Футболка Logo,Футболки/Лонгсливы/Рубашки,,3990,,XS,S,M,L,XL,1
-Кепка Classic,Шапки/Кепки,,2490,,ONE SIZE,1
+id,title,price,category,subcategory,description,image_url,is_active,size_type
+1,PLACE Shoes,9990,Обувь,,Базовая модель, ,1,shoes
+2,Basic Tee,3500,Футболки/Лонгсливы/Рубашки,,Хлопок 100%, ,1,clothes
+3,Cap One,1900,Шапки/Кепки,,, ,1,onesize
+4,Classic Hoodie,6900,Толстовки/Свитера,,, ,1,clothes
+5,Premium Jacket,13990,Куртки/Бомберы,, , ,1,clothes
+6,Denim Slim,7990,Брюки/Джинсы,, , ,1,clothes
+7,City Pack,5990,Сумки/Рюкзаки,, , ,1,onesize
+8,Summer Shorts,4490,Шорты/Юбки,, , ,1,clothes
+9,Leather Belt,2490,Аксессуары,, , ,1,onesize
