@@ -17,11 +17,26 @@ BOT_TOKEN  = os.getenv("BOT_TOKEN", "").strip()
 PORT       = int(os.getenv("PORT", "8000"))
 ADMIN_CHAT_IDS = [int(x) for x in (os.getenv("ADMIN_CHAT_IDS","6773668793").split(",")) if x.strip().isdigit()]
 
-WEBAPP_URL = (os.getenv("WEBAPP_URL","").strip() or "").rstrip("/")
-if WEBAPP_URL:
-    if not WEBAPP_URL.startswith(("http://","https://")):
-        WEBAPP_URL = "https://" + WEBAPP_URL.lstrip("/")
-    WEBAPP_URL = WEBAPP_URL + "/web/"
+# --- Нормализация WEBAPP_URL ---
+def normalize_webapp_url(val: str) -> str:
+    val = (val or "").strip()
+    if not val:
+        return ""
+    if not val.startswith(("http://", "https://")):
+        val = "https://" + val.lstrip("/")
+    # уберем лишние слеши в конце
+    while val.endswith("/"):
+        val = val[:-1]
+    # если уже оканчивается на /web — просто добавим завершающий /
+    if val.endswith("/web"):
+        return val + "/"
+    # если уже на /web/ — оставить
+    if val.endswith("/web/"):
+        return val
+    # иначе добавить /web/
+    return val + "/web/"
+
+WEBAPP_URL = normalize_webapp_url(os.getenv("WEBAPP_URL", ""))
 
 THANKYOU_TEXT = (
     "Спасибо за заказ! В скором времени с Вами свяжется менеджер и пришлет реквизиты для оплаты!"
@@ -31,14 +46,23 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp  = Dispatcher()
 
+# ---------- Aiohttp: страницы и API ----------
+BASE_DIR = op.dirname(op.abspath(__file__))
+WEB_DIR  = op.join(BASE_DIR, "web")
+
 async def index_handler(request):
-    return web.FileResponse(op.join("web", "index.html"))
+    # отдаем главную страницу мини-приложения
+    return web.FileResponse(op.join(WEB_DIR, "index.html"))
 
 async def file_handler(request):
-    p = op.join("web", request.match_info["path"])
-    if not op.isfile(p):
+    rel = request.match_info.get("path", "")
+    path = op.normpath(op.join(WEB_DIR, rel))
+    # защита от выхода из каталога
+    if not path.startswith(WEB_DIR):
+        return web.Response(status=403, text="Forbidden")
+    if not op.isfile(path):
         return web.Response(status=404, text="Not found")
-    return web.FileResponse(p)
+    return web.FileResponse(path)
 
 async def api_categories(request):
     return web.json_response(get_categories())
@@ -57,7 +81,7 @@ async def api_order(request):
     items, total = [], 0
     for it in data.get("items", []):
         p = get_product(int(it["product_id"]))
-        if not p: 
+        if not p:
             continue
         qty  = int(it.get("qty", 1))
         size = (it.get("size") or "")
@@ -74,19 +98,27 @@ async def api_order(request):
 
 def build_app():
     app = web.Application()
+    # Главная страница
     app.router.add_get("/", index_handler)
+    app.router.add_get("/web", index_handler)   # без завершающего слеша
+    app.router.add_get("/web/", index_handler)  # с завершающим слешом
+    # Статика
     app.router.add_get("/web/{path:.*}", file_handler)
+    # API
     app.router.add_get("/api/categories", api_categories)
     app.router.add_get("/api/subcategories", api_subcategories)
     app.router.add_get("/api/products", api_products)
     app.router.add_post("/api/order", api_order)
     return app
 
+# ---------- Бот ----------
 @dp.message(Command("start"))
 async def start(m: Message):
     kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="Открыть LAYOUTPLACE SHOP",
-                             web_app=WebAppInfo(url=WEBAPP_URL or "https://example.com"))
+        InlineKeyboardButton(
+            text="Открыть LAYOUTPLACE SHOP",
+            web_app=WebAppInfo(url=WEBAPP_URL or "https://example.com")
+        )
     ]])
     await m.answer("LAYOUTPLACE SHOP — мини-магазин в Telegram. Открой витрину ниже:", reply_markup=kb)
 
@@ -147,6 +179,7 @@ async def on_webapp_data(m: Message):
             except Exception as e:
                 logging.exception("Admin DM failed to %s: %s", cid, e)
 
+# ---------- Запуск ----------
 async def main():
     assert BOT_TOKEN, "BOT_TOKEN is not set"
     app = build_app()
