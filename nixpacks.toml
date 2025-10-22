@@ -1,0 +1,7 @@
+# фиксируем версию Python для Nixpacks
+[variables]
+NIXPACKS_PYTHON_VERSION = "3.12"
+
+[phases.setup]
+# добавим gcc на всякий случай для сборок колёс
+nixPkgs = ["python312", "gcc"]
