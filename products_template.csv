@@ -1,8 +1,0 @@
-title,category,subcategory,description,price,sizes,image_url,is_active
-PLACE Tee,Футболки/Лонгсливы/Рубашки,Футболки,Хлопок 100%,3500,XS,S,M,L,XL,https://example.com/tee.jpg,1
-PLACE Hoodie,Толстовки/Свитера,Худи,Плотная ткань,4990,S,M,L,XL,https://example.com/hoodie.jpg,1
-PLACE Pants,Брюки/Джинсы,Джинсы,Классические,5990,28,29,30,31,32,https://example.com/jeans.jpg,1
-PLACE Cap,Шапки/Кепки,Кепки,Регулируемая,1990,ONESIZE,https://example.com/cap.jpg,1
-PLACE Bag,Сумки/Рюкзаки,Рюкзаки,Городской,3990,ONESIZE,https://example.com/bag.jpg,1
-PLACE Shoes,Обувь,,Универсальные,9990,36,37,38,39,40,41,42,43,44,https://example.com/shoes.jpg,1
-PLACE Belt,Аксессуары,Ремни,Кожа,2490,S,M,L,https://example.com/belt.jpg,1
