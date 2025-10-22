@@ -1,15 +1,36 @@
 # vk_export.py
 import csv, os, time, requests, sys
 
-VK_TOKEN  = os.getenv("VK_COMMUNITY_TOKEN", "").strip()
-GROUP_ID  = os.getenv("VK_GROUP_ID", "").strip()  # без 'public', просто число, напр. 222108341
-API_URL   = "https://api.vk.com/method/"
-API_V     = "5.199"
+# ===== НАСТРОЙКИ =====
+# Требуется пользовательский токен (user token) со scope: market, groups, offline
+VK_USER_TOKEN      = os.getenv("VK_USER_TOKEN", "").strip()
+VK_COMMUNITY_TOKEN = os.getenv("VK_COMMUNITY_TOKEN", "").strip()  # необязательно
+GROUP_ID           = os.getenv("VK_GROUP_ID", "").strip()         # только цифры, без 'public'
+API_URL            = "https://api.vk.com/method/"
+API_V              = "5.199"
 
 CLOTHES_SIZES = "XS,S,M,L,XL,XXL"
 SHOES_SIZES   = ",".join(str(x) for x in range(36, 46))
 
-# Маппинг категорий под твою витрину
+# ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
+def active_token() -> str:
+    # market.* доступен только через user-токен
+    if VK_USER_TOKEN:
+        return VK_USER_TOKEN
+    raise RuntimeError("Нет VK_USER_TOKEN: методы market.* недоступны с токеном сообщества")
+
+def vk(method, **params):
+    token = active_token()
+    params.update({"access_token": token, "v": API_V})
+    r = requests.get(API_URL + method, params=params, timeout=30)
+    data = r.json()
+    if "error" in data:
+        code = data["error"].get("error_code")
+        msg  = data["error"].get("error_msg")
+        raise RuntimeError(f"VK error {code}: {msg}")
+    return data["response"]
+
+# ===== МАППИНГ КАТЕГОРИЙ =====
 def map_category(album_title: str) -> str:
     t = (album_title or "").lower()
     if any(w in t for w in ["куртк","бомбер"]): return "Куртки/Бомберы"
@@ -28,16 +49,6 @@ def sizes_for(category: str, title: str, desc: str) -> str:
         return "ONE SIZE"
     return SHOES_SIZES if "обув" in category.lower() else CLOTHES_SIZES
 
-def vk(method, **params):
-    params.update({"access_token": VK_TOKEN, "v": API_V})
-    r = requests.get(API_URL + method, params=params, timeout=30)
-    data = r.json()
-    if "error" in data:
-        code = data["error"].get("error_code")
-        msg  = data["error"].get("error_msg")
-        raise RuntimeError(f"VK error {code}: {msg}")
-    return data["response"]
-
 def get_albums(owner_id: int):
     albums = {}
     offset = 0
@@ -51,10 +62,11 @@ def get_albums(owner_id: int):
         time.sleep(0.34)
     return albums
 
+# ===== ОСНОВНАЯ ЛОГИКА =====
 def main():
-    if not VK_TOKEN or not GROUP_ID.isdigit():
-        print("vk_export.py: пропуск — нет VK_COMMUNITY_TOKEN или VK_GROUP_ID", file=sys.stderr)
-        return  # мягко выходим, чтобы деплой не падал
+    if not VK_USER_TOKEN or not GROUP_ID.isdigit():
+        print("vk_export.py: пропуск — нужен VK_USER_TOKEN и числовой VK_GROUP_ID", file=sys.stderr)
+        return
 
     group_num = int(GROUP_ID)
     owner_id = -group_num  # для сообществ owner_id всегда отрицательный
@@ -80,7 +92,7 @@ def main():
             category = map_category(album_title)
             image = it.get("thumb_photo") or ""
             sizes = sizes_for(category, title, desc)
-            is_active = 1 if it.get("availability", 0) == 0 else 0  # 0 — в наличии
+            is_active = 1 if it.get("availability", 0) == 0 else 0  # 0 = в наличии
 
             items_out.append({
                 "title": title,
