@@ -4,7 +4,7 @@ tg?.ready();
 
 // ========= Константы проекта =========
 // Если есть @username менеджера — укажи без @. Он надёжней в WebApp на iOS.
-const MANAGER_USERNAME = "layouplacebuy";       // <— поставь свой @ без @
+const MANAGER_USERNAME = "layoutplacebuy";       // <— поставь свой @ без @
 const MANAGER_ID       = 6773668793;        // резервный путь по id
 
 // Относительный API (наш бот и статика живут на одном домене)
