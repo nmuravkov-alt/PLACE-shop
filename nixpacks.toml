@@ -3,3 +3,6 @@ NIXPACKS_PYTHON_VERSION = "3.12"
 
 [phases.setup]
 nixPkgs = ["python312", "gcc"]
+
+[phases.build]
+cmds = ["pip install requests", "python vk_export.py"]
