@@ -1,10 +1,10 @@
-id,title,price,category,subcategory,description,image_url,is_active,size_type
-1,PLACE Shoes,9990,Обувь,,Базовая модель, ,1,shoes
-2,Basic Tee,3500,Футболки/Лонгсливы/Рубашки,,Хлопок 100%, ,1,clothes
-3,Cap One,1900,Шапки/Кепки,,, ,1,onesize
-4,Classic Hoodie,6900,Толстовки/Свитера,,, ,1,clothes
-5,Premium Jacket,13990,Куртки/Бомберы,, , ,1,clothes
-6,Denim Slim,7990,Брюки/Джинсы,, , ,1,clothes
-7,City Pack,5990,Сумки/Рюкзаки,, , ,1,onesize
-8,Summer Shorts,4490,Шорты/Юбки,, , ,1,clothes
-9,Leather Belt,2490,Аксессуары,, , ,1,onesize
+id,title,category,subcategory,price,old_price,image_url,sizes_text,is_active
+1,PLACE Shoes,Обувь,,9990,,https://i.imgur.com/placeholder.png,ONESIZE,1
+2,Куртка PLACE,Куртки/Бомберы,,12990,,https://i.imgur.com/placeholder.png,XS,S,M,L,XL,XXL,1
+3,Толстовка PLACE,Толстовки/Свитера,,7990,,https://i.imgur.com/placeholder.png,XS,S,M,L,XL,XXL,1
+4,Джинсы PLACE,Брюки/Джинсы,,8990,,https://i.imgur.com/placeholder.png,XS,S,M,L,XL,XXL,1
+5,Сумка PLACE,Сумки/Рюкзаки,,4990,,https://i.imgur.com/placeholder.png,ONE SIZE,1
+6,Футболка PLACE,Футболки/Лонгсливы/Рубашки,,3990,,https://i.imgur.com/placeholder.png,XS,S,M,L,XL,XXL,1
+7,Кепка PLACE,Шапки/Кепки,,1900,,https://i.imgur.com/placeholder.png,ONE SIZE,1
+8,Шорты PLACE,Шорты/Юбки,,5990,,https://i.imgur.com/placeholder.png,XS,S,M,L,XL,XXL,1
+9,Аксессуар PLACE,Аксессуары,,990,,https://i.imgur.com/placeholder.png,ONE SIZE,1
