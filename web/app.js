@@ -1,330 +1,251 @@
-/* ====== LAYOUTPLACE SHOP — фронт без изменения внешнего вида ======
- * Починено:
- * 1) Добавление в корзину и открытие корзины по иконке справа.
- * 2) Кнопка «Написать» — открывает чат с менеджером в Telegram.
- * 3) «Оформить» — форма, валидация телефона +7XXXXXXXXXX, отправка в бот через sendData.
- * 4) Размеры: OUTFIT = XS,S,M,L,XL,XXL; SHOES = 36–45; ONE SIZE.
- * Вёрстку не трогаем — работаем по data-* атрибутам и id.
- * ================================================================ */
+const tg = window.Telegram?.WebApp;
+tg?.ready();
 
-(() => {
-  const tg = window.Telegram?.WebApp;
-  if (tg) tg.expand();
+// ========= Константы проекта =========
+const API = ""; // относительные пути к бекенду
+const MANAGER_ID = 6773668793; // tg://user?id=...
+const CLOTHES_SIZES = ["XS","S","M","L","XL","XXL"];
+const SHOES_SIZES   = ["36","37","38","39","40","41","42","43","44","45"];
 
-  /* --- Константы --- */
-  const MANAGER_ID = 6773668793; // чат «Написать»
-  const CLOTHES_SIZES = ["XS","S","M","L","XL","XXL"];
-  const SHOES_SIZES   = Array.from({length: 10}, (_,i)=> String(36+i)); // 36..45
-  const ONE_SIZE      = ["ONE SIZE"];
+// ========= Состояние =========
+let state = {
+  category: null,
+  cart: [] // [{id,title,price,size,qty}]
+};
 
-  /* --- Селекторы интерфейса (существующие элементы) --- */
-  const el = {
-    categories:   document.querySelector('[data-el="categories"]'),     // сетка категорий
-    products:     document.querySelector('[data-el="products"]'),       // список карточек
-    cartBadge:    document.querySelector('[data-el="cart-badge"]'),     // счётчик в иконке
-    cartButton:   document.querySelector('[data-action="open-cart"]'),  // иконка корзины справа
-    writeBtn:     document.querySelector('[data-action="write"]'),      // «Написать»
-    checkoutBtn:  document.querySelector('[data-action="checkout"]'),   // «Оформить» (внизу)
-    cartSheet:    document.querySelector('[data-el="cart-sheet"]'),     // нижний слайдер корзины
-    cartList:     document.querySelector('[data-el="cart-list"]'),      // список в корзине
-    cartTotal:    document.querySelector('[data-el="cart-total"]'),     // сумма в корзине
-    formSheet:    document.querySelector('[data-el="form-sheet"]'),     // нижний слайдер формы
-    form:         document.querySelector('[data-el="order-form"]'),     // сама форма
-    // поля формы
-    fFullName:    document.querySelector('[name="full_name"]'),
-    fPhone:       document.querySelector('[name="phone"]'),
-    fAddress:     document.querySelector('[name="address"]'),
-    fComment:     document.querySelector('[name="comment"]'),
-    fTelegram:    document.querySelector('[name="telegram"]'),
-  };
+const $ = (sel) => document.querySelector(sel);
+const categoriesEl = $("#categories");
+const productsEl   = $("#products");
+const cartBtn      = $("#cartBtn");
+const cartCount    = $("#cartCount");
+const writeBtn     = $("#writeBtn");
+const checkoutBtn  = $("#checkoutBtn");
+const sheet        = $("#sheet");
+const backdrop     = $("#backdrop");
 
-  /* --- Состояние --- */
-  let state = {
-    category: null,
-    subcategory: "",
-    cart: [],            // [{id,title,price,size,qty}]
-    productsCache: {},   // cache по category+subcategory
-  };
+// ========= Утилиты =========
+function openSheet(html) {
+  sheet.innerHTML = html;
+  sheet.classList.remove("hidden");
+  backdrop.classList.remove("hidden");
+  backdrop.onclick = closeSheet;
+}
+function closeSheet() {
+  sheet.classList.add("hidden");
+  backdrop.classList.add("hidden");
+  sheet.innerHTML = "";
+}
+function updateCartBadge() {
+  const n = state.cart.reduce((s,i)=>s+i.qty,0);
+  cartCount.textContent = n;
+}
+function addToCart(p, size) {
+  const key = `${p.id}:${size||""}`;
+  const f = state.cart.find(it => it.key === key);
+  if (f) f.qty += 1;
+  else state.cart.push({ key, id:p.id, title:p.title, price:p.price, size:size||"", qty:1 });
+  updateCartBadge();
+}
+function money(n){ return (n||0).toLocaleString('ru-RU') + " ₽"; }
 
-  /* --- Утилиты --- */
-  const rub = n => `${n.toLocaleString("ru-RU")} ₽`;
-  const setBadge = () => {
-    const count = state.cart.reduce((s, it) => s + it.qty, 0);
-    if (el.cartBadge) el.cartBadge.textContent = String(count);
-  };
-  const openSheet = sheet => sheet?.classList.add('is-open');
-  const closeSheet = sheet => sheet?.classList.remove('is-open');
+// ========= API =========
+async function getJSON(url){
+  const r = await fetch(url);
+  if(!r.ok) throw new Error("HTTP "+r.status);
+  return r.json();
+}
 
-  const phoneValid = (v) => {
-    // Только +7 и 10 цифр после
-    return /^\+7\d{10}$/.test(String(v).replace(/\s/g,''));
-  };
+async function loadCategories(){
+  const data = await getJSON(`${API}/api/categories`);
+  // поддержка форматов: ["А", "B"] или [{title,image_url}]
+  return (data||[]).map(c => (typeof c==="string") ? {title:c} : {title:c.title, image_url:c.image_url||""});
+}
+async function loadProducts(category, sub=""){
+  const u = new URL(`${API}/api/products`, location.origin);
+  if (category)   u.searchParams.set("category", category);
+  if (sub != null) u.searchParams.set("subcategory", sub);
+  return getJSON(u);
+}
 
-  const inferSizes = (p) => {
-    // если явно указан тип, используем его
-    const t = (p.size_type || "").toLowerCase();
-    if (t === 'clothes') return CLOTHES_SIZES;
-    if (t === 'shoes')   return SHOES_SIZES;
-    if (t === 'onesize') return ONE_SIZE;
-
-    // попытка угадать по категории
-    const cat = (p.category || '').toLowerCase();
-    if (["обувь","кроссовки","ботинки","sneakers","shoes"].some(k=>cat.includes(k))) return SHOES_SIZES;
-    if (["аксессуары","accessories"].some(k=>cat.includes(k))) return ONE_SIZE;
-    // по умолчанию — одежда
-    return CLOTHES_SIZES;
-  };
-
-  /* --- Работа с API --- */
-  const api = {
-    categories: () => fetch('/api/categories').then(r=>r.json()),
-    subcategories: (cat) => fetch(`/api/subcategories?category=${encodeURIComponent(cat||'')}`).then(r=>r.json()),
-    products: (cat, sub) => {
-      const key = `${cat}|||${sub||''}`;
-      if (state.productsCache[key]) return Promise.resolve(state.productsCache[key]);
-      return fetch(`/api/products?category=${encodeURIComponent(cat||'')}&subcategory=${encodeURIComponent(sub||'')}`)
-        .then(r=>r.json())
-        .then(arr => (state.productsCache[key] = arr, arr));
-    }
-  };
-
-  /* --- Рендер категорий (кнопки уже существуют, просто наполняем из БД порядком) --- */
-  async function initCategories() {
-    if (!el.categories) return;
-    const cats = await api.categories(); // [{title, image_url}] — image_url можем игнорировать
-    // твой интерфейс уже содержит блоки с нужными названиями — просто ставим data-cat
-    const buttons = el.categories.querySelectorAll('[data-cat-index]');
-    const list = cats?.map(c => c.title) || [];
-    buttons.forEach((btn,i)=>{
-      const titleNode = btn.querySelector('[data-el="cat-title"]');
-      const title = list[i] || titleNode?.textContent || '';
-      btn.dataset.category = title;
-      if (titleNode) titleNode.textContent = title;
-      // клик
-      btn.addEventListener('click', () => {
-        state.category = title;
-        state.subcategory = "";
-        loadProducts();
-      });
-    });
-    // автозагрузка первой категории
-    if (buttons[0]) buttons[0].click();
-  }
-
-  /* --- Рендер продуктов в список карточек --- */
-  async function loadProducts() {
-    if (!el.products || !state.category) return;
-    const prods = await api.products(state.category, state.subcategory);
-    el.products.innerHTML = prods.map(p => {
-      const prices = Number(p.price) || 0;
-      const sizes = inferSizes(p);
-      const sel = sizes.map(s => `<option value="${s}">${s}</option>`).join('');
-      return `
-        <div class="card" data-product-id="${p.id}">
-          <div class="title">${escapeHtml(p.title || "")}</div>
-          <div class="price">${rub(prices)}</div>
-          <select class="size" data-el="size">${sel}</select>
-          <button class="btn black" data-action="add" data-id="${p.id}">В корзину</button>
-        </div>
-      `;
-    }).join('');
-  }
-
-  /* --- Корзина --- */
-  function addToCart(product, size) {
-    const key = `${product.id}__${size||''}`;
-    const found = state.cart.find(i => i.key === key);
-    if (found) {
-      found.qty += 1;
+// ========= Рендер =========
+function renderCategories(list){
+  categoriesEl.innerHTML = "";
+  const grid = document.createDocumentFragment();
+  list.forEach(cat=>{
+    const div = document.createElement("div");
+    div.className = "cat";
+    div.textContent = cat.title;
+    div.onclick = () => { state.category = cat.title; drawProducts(); };
+    grid.appendChild(div);
+  });
+  categoriesEl.appendChild(grid);
+}
+async function drawProducts(){
+  productsEl.innerHTML = "";
+  const items = await loadProducts(state.category || "");
+  items.forEach(p=>{
+    // вычислим набор размеров: если sizes_text есть — используем его; если категория «Обувь» — цифры; иначе — одежда
+    let sizes = [];
+    if (p.sizes_text) {
+      sizes = String(p.sizes_text).split(",").map(s=>s.trim()).filter(Boolean);
+    } else if ((p.category||"").toLowerCase().includes("обув")) {
+      sizes = SHOES_SIZES;
     } else {
-      state.cart.push({
-        key,
-        id: product.id,
-        title: product.title,
-        price: Number(product.price) || 0,
-        size: size || "",
-        qty: 1
-      });
+      sizes = CLOTHES_SIZES;
     }
-    setBadge();
-    renderCart();
-  }
 
-  function removeFromCart(key) {
-    state.cart = state.cart.filter(i => i.key !== key);
-    setBadge();
-    renderCart();
-  }
-
-  function changeQty(key, delta) {
-    const it = state.cart.find(i => i.key === key);
-    if (!it) return;
-    it.qty += delta;
-    if (it.qty <= 0) return removeFromCart(key);
-    renderCart();
-  }
-
-  function renderCart() {
-    if (!el.cartList || !el.cartTotal) return;
-    if (!state.cart.length) {
-      el.cartList.innerHTML = `<div class="muted">Корзина пуста</div>`;
-      el.cartTotal.textContent = rub(0);
-      return;
-    }
-    el.cartList.innerHTML = state.cart.map(i => `
-      <div class="cart-row" data-key="${i.key}">
-        <div class="cart-title">${escapeHtml(i.title)} ${i.size?`<span class="chip">${i.size}</span>`:''}</div>
-        <div class="cart-qty">
-          <button data-action="minus" class="qbtn">–</button>
-          <span>${i.qty}</span>
-          <button data-action="plus" class="qbtn">+</button>
-        </div>
-        <div class="cart-sum">${rub(i.price * i.qty)}</div>
-        <button class="cart-remove" data-action="remove">×</button>
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `
+      <div class="title">${p.title}</div>
+      <div class="price">${money(p.price)}</div>
+      <div class="size-row">
+        <select id="size-${p.id}">
+          ${sizes.map(s=>`<option value="${s}">${s}</option>`).join("")}
+        </select>
       </div>
-    `).join('');
-    const total = state.cart.reduce((s,i)=> s + i.price*i.qty, 0);
-    el.cartTotal.textContent = rub(total);
-  }
+      <div style="margin-top:10px">
+        <button class="btn primary" id="btn-${p.id}">В корзину</button>
+      </div>
+    `;
+    productsEl.appendChild(card);
 
-  /* --- Оформление --- */
-  function openCheckout() {
-    if (!state.cart.length) {
-      toast("Сначала добавьте товары в корзину");
-      return;
-    }
-    openSheet(el.formSheet);
-  }
+    $("#btn-"+p.id).onclick = () => {
+      const sz = $("#size-"+p.id).value;
+      addToCart(p, sz);
+      tg?.HapticFeedback?.impactOccurred("medium");
+    };
+  });
+}
 
-  function submitOrder() {
+// ========= Корзина =========
+function openCart(){
+  if (state.cart.length === 0){
+    openSheet(`<div class="row"><b>Корзина пуста</b></div>`);
+    return;
+  }
+  const rows = state.cart.map((it,idx)=>`
+    <div class="row">
+      <div>
+        <div><b>${it.title}</b> ${it.size?`[${it.size}]`:""}</div>
+        <div>${money(it.price)} × ${it.qty}</div>
+      </div>
+      <div>
+        <button data-a="minus" data-i="${idx}">–</button>
+        <button data-a="plus"  data-i="${idx}">+</button>
+        <button data-a="rm"    data-i="${idx}">✕</button>
+      </div>
+    </div>
+  `).join("");
+  const total = state.cart.reduce((s,i)=>s+i.price*i.qty,0);
+  openSheet(`
+    <h3>Корзина</h3>
+    ${rows}
+    <div class="row"><b>Итого:</b><b>${money(total)}</b></div>
+    <button id="toCheckout" class="btn primary">Оформить</button>
+  `);
+
+  sheet.onclick = (e)=>{
+    const a = e.target?.dataset?.a;
+    if(!a) return;
+    const i = +e.target.dataset.i;
+    if(a==="plus")  state.cart[i].qty++;
+    if(a==="minus") state.cart[i].qty = Math.max(1, state.cart[i].qty-1);
+    if(a==="rm")    state.cart.splice(i,1);
+    updateCartBadge();
+    closeSheet(); openCart();
+  };
+  $("#toCheckout").onclick = () => { closeSheet(); openCheckout(); };
+}
+
+function openCheckout(){
+  const total = state.cart.reduce((s,i)=>s+i.price*i.qty,0);
+  openSheet(`
+    <h3>Оформление</h3>
+    <div class="row">
+      <label>ФИО</label>
+      <input id="fio" placeholder="Иванов Иван"/>
+    </div>
+    <div class="row">
+      <label>Телефон (+7XXXXXXXXXX)</label>
+      <input id="phone" inputmode="tel" placeholder="+7XXXXXXXXXX"/>
+    </div>
+    <div class="row">
+      <label>Адрес/СДЭК</label>
+      <textarea id="addr" rows="2" placeholder="Город, пункт выдачи..."></textarea>
+    </div>
+    <div class="row">
+      <label>Комментарий к заказу (размер)</label>
+      <textarea id="comment" rows="2" placeholder="Например: размер L, цвет черный"></textarea>
+    </div>
+    <div class="row">
+      <label>Telegram (для связи с Вами)</label>
+      <input id="tguser" placeholder="@username"/>
+    </div>
+    <div class="row"><b>Сумма:</b><b>${money(total)}</b></div>
+    <button id="submitOrder" class="btn primary">Отправить</button>
+  `);
+
+  $("#submitOrder").onclick = async () => {
+    const fio   = $("#fio");
+    const phone = $("#phone");
+    const addr  = $("#addr");
+    const comm  = $("#comment");
+    const tguser= $("#tguser");
+
+    // валидация телефона по маске +7XXXXXXXXXX
+    const okPhone = /^\+7\d{10}$/.test(phone.value.trim());
+    [fio, phone].forEach(el=>el.classList.remove("bad"));
+    if (!fio.value.trim()) { fio.classList.add("bad"); return; }
+    if (!okPhone)          { phone.classList.add("bad"); return; }
+
     const payload = {
-      full_name: el.fFullName?.value?.trim() || "",
-      phone: (el.fPhone?.value || "").replace(/\s/g,''),
-      address: el.fAddress?.value?.trim() || "",
-      comment: el.fComment?.value?.trim() || "",
-      telegram: el.fTelegram?.value?.trim() || "",
-      items: state.cart.map(i => ({
-        product_id: i.id,
-        size: i.size,
-        qty: i.qty
+      full_name: fio.value.trim(),
+      phone: phone.value.trim(),
+      address: addr.value.trim(),
+      comment: comm.value.trim(),
+      telegram: tguser.value.trim(),
+      items: state.cart.map(it=>({
+        product_id: it.id, size: it.size, qty: it.qty
       }))
     };
 
-    // валидация
-    if (!payload.full_name) return toast("Укажите ФИО");
-    if (!phoneValid(payload.phone)) return toast("Телефон: формат +7XXXXXXXXXX");
-    if (!payload.address) return toast("Укажите адрес / СДЭК");
+    // отправляем в бота
+    try { tg?.sendData?.(JSON.stringify(payload)); } catch(e){}
 
+    // резервно продублируем на backend
     try {
-      tg?.sendData(JSON.stringify(payload));
-      toast("Заявка отправлена!");
-      closeSheet(el.formSheet);
-      closeSheet(el.cartSheet);
-      // очищаем корзину
-      state.cart = [];
-      setBadge();
-      renderCart();
-    } catch(e) {
-      console.error(e);
-      // запасной REST
-      fetch('/api/order', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
+      await fetch(`${API}/api/order`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
         body: JSON.stringify(payload)
-      }).then(r=>r.json()).then(() => {
-        toast("Заявка отправлена!");
-        closeSheet(el.formSheet);
-        closeSheet(el.cartSheet);
-        state.cart = [];
-        setBadge();
-        renderCart();
-      }).catch(()=> toast("Не удалось отправить заявку, попробуйте ещё раз"));
-    }
+      });
+    } catch(e){}
+
+    tg?.HapticFeedback?.notificationOccurred("success");
+    closeSheet();
+  };
+}
+
+// ========= Кнопки внизу =========
+writeBtn.onclick = () => {
+  // открываем чат с менеджером по id
+  const url = `tg://user?id=${MANAGER_ID}`;
+  if (tg?.openTelegramLink) tg.openTelegramLink(url);
+  else window.location.href = url;
+};
+checkoutBtn.onclick = () => openCheckout();
+cartBtn.onclick = () => openCart();
+
+// ========= Инициализация =========
+(async function init(){
+  try {
+    const cats = await loadCategories();
+    renderCategories(cats);
+    state.category = (cats[0]?.title) || null;
+  } catch(e){
+    // если категорий нет — просто не рендерим сетку (UI остаётся)
   }
-
-  /* --- Слушатели --- */
-  document.addEventListener('click', async (e) => {
-    const t = e.target;
-
-    // Открыть корзину (иконка)
-    if (t.closest('[data-action="open-cart"]')) {
-      renderCart();
-      openSheet(el.cartSheet);
-      return;
-    }
-
-    // Добавить в корзину
-    if (t.closest('[data-action="add"]')) {
-      const btn = t.closest('[data-action="add"]');
-      const id  = Number(btn.dataset.id);
-      const card= btn.closest('[data-product-id]');
-      const sizeSel = card?.querySelector('[data-el="size"]');
-      const size = sizeSel?.value || "";
-
-      // достаем актуальный продукт из последней загрузки
-      const prods = await api.products(state.category, state.subcategory);
-      const prod = prods.find(p => Number(p.id) === id);
-      if (!prod) return;
-
-      addToCart(prod, size);
-      toast("Добавлено в корзину");
-      return;
-    }
-
-    // Кнопки в корзине
-    if (t.closest('[data-el="cart-list"]')) {
-      const row = t.closest('.cart-row');
-      if (!row) return;
-      const key = row.dataset.key;
-
-      if (t.dataset.action === 'minus') return changeQty(key, -1);
-      if (t.dataset.action === 'plus')  return changeQty(key, +1);
-      if (t.dataset.action === 'remove')return removeFromCart(key);
-    }
-
-    // «Написать»
-    if (t.closest('[data-action="write"]')) {
-      const url = `tg://user?id=${MANAGER_ID}`;
-      if (tg?.openTelegramLink) tg.openTelegramLink(url);
-      else window.location.href = url;
-      return;
-    }
-
-    // «Оформить»
-    if (t.closest('[data-action="checkout"]')) {
-      openCheckout();
-      return;
-    }
-
-    // Закрытия шитов, если клик по data-close
-    if (t.closest('[data-close="sheet"]')) {
-      const sh = t.closest('.sheet');
-      closeSheet(sh);
-      return;
-    }
-  });
-
-  // Отправка формы (если есть кнопка type=submit)
-  el.form?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    submitOrder();
-  });
-
-  /* --- Хелперы UI --- */
-  function toast(text) {
-    if (tg?.showPopup) {
-      tg.showPopup({message: text});
-    } else {
-      alert(text);
-    }
-  }
-
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, m => ({
-      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
-    }[m]));
-  }
-
-  /* --- Старт --- */
-  initCategories().catch(console.error);
+  await drawProducts();
+  updateCartBadge();
 })();
