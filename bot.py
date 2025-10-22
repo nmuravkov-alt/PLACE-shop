@@ -46,10 +46,14 @@ async def index_handler(request):
     return web.FileResponse(op.join("web", "index.html"))
 
 async def file_handler(request):
-    p = op.join("web", request.match_info["path"])
+    path = request.match_info.get("path", "")
+    if not path:  # если просто /web/ без файла
+        return web.FileResponse(op.join("web", "index.html"))
+    p = op.join("web", path)
     if not op.isfile(p):
         return web.Response(status=404, text="Not found")
     return web.FileResponse(p)
+
 
 async def api_categories(request):
     return web.json_response(get_categories())
@@ -88,12 +92,18 @@ async def api_order(request):
 def build_app():
     app = web.Application()
     app.router.add_get("/", index_handler)
+
+    # Добавляем эти две строки 👇
+    app.router.add_get("/web/", index_handler)
+    app.router.add_get("/web", index_handler)
+
     app.router.add_get("/web/{path:.*}", file_handler)
     app.router.add_get("/api/categories", api_categories)
     app.router.add_get("/api/subcategories", api_subcategories)
     app.router.add_get("/api/products", api_products)
     app.router.add_post("/api/order", api_order)
     return app
+
 
 # ---------- Bot ----------
 @dp.message(Command("start"))
