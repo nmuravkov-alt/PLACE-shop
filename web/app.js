@@ -3,11 +3,11 @@ const tg = window.Telegram?.WebApp;
 tg?.ready();
 
 // ========= Константы проекта =========
-// Если есть @username менеджера — укажи без @. Он надёжней в WebApp на iOS.
-const MANAGER_USERNAME = "layoutplacebuy";       // <— поставь свой @ без @
-const MANAGER_ID       = 6773668793;        // резервный путь по id
+// Если есть @username менеджера — укажи без @. Он надёжнее в WebApp (особенно на iOS).
+const MANAGER_USERNAME = "layoutplacebuy";   // <— поставь свой @ без @
+const MANAGER_ID       = 6773668793;         // резервный путь по id
 
-// Относительный API (наш бот и статика живут на одном домене)
+// Относительный API (бот и статика на одном домене)
 const API = "";
 
 // Размеры по умолчанию
@@ -30,6 +30,8 @@ const writeBtn     = $("#writeBtn");
 const checkoutBtn  = $("#checkoutBtn");
 const sheet        = $("#sheet");
 const backdrop     = $("#backdrop");
+const titleEl      = $("#shopTitle");   // в index.html добавь id="shopTitle" на заголовок
+const subtitleEl   = $("#subtitle");    // опционально id="subtitle" для подзаголовка
 
 // ========= Утилиты =========
 function openSheet(html) {
@@ -58,17 +60,24 @@ function money(n){ return (n||0).toLocaleString('ru-RU') + " ₽"; }
 
 // ========= API =========
 async function getJSON(url){
-  const r = await fetch(url);
+  const r = await fetch(url, { credentials: "same-origin" });
   if(!r.ok) throw new Error("HTTP "+r.status);
   return r.json();
+}
+async function loadConfig(){
+  try {
+    return await getJSON(`${API}/api/config`);
+  } catch {
+    return { title: "LAYOUTPLACE Shop" };
+  }
 }
 async function loadCategories(){
   const data = await getJSON(`${API}/api/categories`);
   return (data||[]).map(c => (typeof c==="string") ? {title:c} : {title:c.title, image_url:c.image_url||""});
 }
 async function loadProducts(category, sub=""){
-  const u = new URL(`${API}/api/products`, location.origin);
-  if (category)   u.searchParams.set("category", category);
+  const u = new URL(`/api/products`, location.origin);
+  if (category)    u.searchParams.set("category", category);
   if (sub != null) u.searchParams.set("subcategory", sub);
   return getJSON(u);
 }
@@ -91,8 +100,9 @@ async function drawProducts(){
   productsEl.innerHTML = "";
   const items = await loadProducts(state.category || "");
   items.forEach(p=>{
+    // набор размеров: в приоритете sizes_text из БД; для "Обувь" — цифры; иначе — одежда
     let sizes = [];
-    if (p.sizes_text) {
+    if (p.sizes_text && String(p.sizes_text).trim()) {
       sizes = String(p.sizes_text).split(",").map(s=>s.trim()).filter(Boolean);
     } else if ((p.category||"").toLowerCase().includes("обув")) {
       sizes = SHOES_SIZES;
@@ -119,7 +129,7 @@ async function drawProducts(){
     $("#btn-"+p.id).onclick = () => {
       const sz = $("#size-"+p.id).value;
       addToCart(p, sz);
-      tg?.HapticFeedback?.impactOccurred("medium");
+      tg?.HapticFeedback?.impactOccurred?.("medium");
     };
   });
 }
@@ -198,10 +208,10 @@ function openCheckout(){
       items: state.cart.map(it=>({ product_id: it.id, size: it.size, qty: it.qty }))
     };
 
-    // отправка в Telegram (WebAppData)
+    // Отправка в Telegram (WebAppData)
     try { tg?.sendData?.(JSON.stringify(payload)); } catch(e){}
 
-    // резервная отправка на backend
+    // Резервная отправка на backend
     try {
       await fetch(`${API}/api/order`, {
         method: "POST",
@@ -210,17 +220,19 @@ function openCheckout(){
       });
     } catch(e){}
 
-    tg?.HapticFeedback?.notificationOccurred("success");
+    tg?.HapticFeedback?.notificationOccurred?.("success");
     closeSheet();
   };
 }
 
 // ========= Нижние кнопки =========
 writeBtn.onclick = () => {
+  // 1) Переход по username на iOS/Android безопаснее через openLink
   if (MANAGER_USERNAME) {
     const url = `https://t.me/${MANAGER_USERNAME}`;
     if (tg?.openLink) tg.openLink(url); else window.open(url, "_blank");
   } else {
+    // 2) Резерв: прямой deep-link по user id
     const url = `tg://user?id=${MANAGER_ID}`;
     if (tg?.openTelegramLink) tg.openTelegramLink(url); else window.location.href = url;
   }
@@ -230,11 +242,23 @@ cartBtn.onclick = () => openCart();
 
 // ========= Инициализация =========
 (async function init(){
+  // Подтягиваем название магазина с backend и выставляем заголовки
+  try {
+    const cfg = await loadConfig();
+    if (cfg?.title) {
+      if (titleEl)   titleEl.textContent = cfg.title;
+      document.title = cfg.title;
+      if (subtitleEl && !subtitleEl.textContent.trim()) {
+        subtitleEl.textContent = ""; // заполни при желании
+      }
+    }
+  } catch {}
+
   try {
     const cats = await loadCategories();
     renderCategories(cats);
     state.category = (cats[0]?.title) || null;
-  } catch(e){}
+  } catch {}
   await drawProducts();
   updateCartBadge();
 })();
