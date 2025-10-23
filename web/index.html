@@ -4,8 +4,9 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>LAYOUTPLACE Shop</title>
-  <link rel="stylesheet" href="./style.css"/>
+  <link rel="stylesheet" href="./style.css?v=3"/>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="./app.js?v=3"></script>
 </head>
 <body>
   <header class="topbar">
@@ -23,16 +24,12 @@
     <div id="products" class="products"></div>
   </main>
 
-  <!-- нижняя панель -->
   <footer class="bottom">
     <button id="writeBtn" class="btn ghost">Написать</button>
     <button id="checkoutBtn" class="btn primary">Оформить</button>
   </footer>
 
-  <!-- модалки -->
   <div id="sheet" class="sheet hidden"></div>
   <div id="backdrop" class="backdrop hidden"></div>
-
-  <script src="./app.js"></script>
 </body>
 </html>
