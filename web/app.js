@@ -57,29 +57,21 @@ function addToCart(p, size) {
 }
 function money(n){ return (n||0).toLocaleString('ru-RU') + " ₽"; }
 
-// — нормализация ссылок на изображения (GitHub/Drive), убираем временные токены —
+/**
+ * Нормализация ссылок на изображения.
+ * - Локальные файлы из репы (/images/...) отдаём напрямую
+ * - Все внешние (GitHub/Drive и пр.) — через наш прокси /img?u=...
+ *   (прокси на бэке сам уберёт токены, починит drive/github-refs и отдаст с нашего домена)
+ */
 function normalizeImageUrl(urlRaw) {
   if (!urlRaw) return "";
   let u = String(urlRaw).trim();
 
-  // убрать query-токены (?token=... и т.п.)
-  const qIdx = u.indexOf("?");
-  if (qIdx > -1) u = u.slice(0, qIdx);
+  // если уже локальная картинка — оставляем
+  if (u.startsWith("/images/")) return u;
 
-  // Google Drive "view" -> прямой контент
-  // примеры: https://drive.google.com/file/d/FILE_ID/view  -> https://drive.google.com/uc?export=view&id=FILE_ID
-  const m = u.match(/drive\.google\.com\/file\/d\/([^/]+)/i);
-  if (m && m[1]) {
-    const id = m[1];
-    return `https://drive.google.com/uc?export=view&id=${id}`;
-  }
-
-  // GitHub raw с refs/heads/main -> лучше без "refs/heads"
-  // https://raw.githubusercontent.com/user/repo/refs/heads/main/path -> /user/repo/main/path
-  u = u.replace(/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/refs\/heads\/main\//i,
-                 "raw.githubusercontent.com/$1/$2/main/");
-
-  return u;
+  // иначе — через прокси нашего приложения
+  return `/img?u=${encodeURIComponent(u)}`;
 }
 
 // ========= API =========
@@ -134,7 +126,7 @@ async function drawProducts(){
       sizes = CLOTHES_SIZES;
     }
 
-    // подготовим URL картинки
+    // подготовим URL картинки (через normalize -> /img?u=... или /images/...)
     const imgUrl = normalizeImageUrl(p.image_url || p.image || "");
 
     const card = document.createElement("div");
