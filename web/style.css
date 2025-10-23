@@ -1,43 +1,131 @@
-*{box-sizing:border-box}
-body{margin:0;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Arial}
-.topbar{display:flex;justify-content:space-between;align-items:center;padding:16px}
-.shop-title{font-size:28px;font-weight:800}
-.subtitle{color:#666;margin-top:2px}
-.cart-btn{border:1px solid #ddd;background:#fff;border-radius:12px;padding:8px 12px;font-size:16px}
-.container{padding:12px}
-.cat-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.cat{border:1px solid #e6e6e6;border-radius:12px;padding:16px;background:#fff;cursor:pointer}
+/* ========== БАЗА ========== */
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Arial;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: #fff;
+  color: #000;
+}
+
+/* ========== ТОП-ПАНЕЛЬ ========== */
+.topbar{
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display:flex;justify-content:space-between;align-items:center;
+  padding:16px 16px 12px;
+  background:#fff;
+}
+
+.shop-title{font-size:28px;font-weight:800;line-height:1.05;}
+.subtitle{color:#666;margin-top:2px;font-size:13px;}
+
+.cart-btn{
+  border:1px solid #ddd;background:#fff;border-radius:12px;
+  padding:8px 12px;font-size:16px;line-height:1;cursor:pointer;
+}
+
+/* ========== КОНТЕЙНЕРЫ ========== */
+.container{padding:12px 16px 16px;}
+.cat-grid{
+  display:grid;grid-template-columns:1fr 1fr;gap:12px;
+  margin-bottom:8px;
+}
+.cat{
+  border:1px solid #e6e6e6;border-radius:12px;padding:14px 16px;
+  background:#fff;cursor:pointer;text-align:left;font-weight:600;
+}
 .cat:hover{background:#fafafa}
-.products{display:grid;grid-template-columns:1fr;gap:12px;margin-top:16px}
-.card{border:1px solid #e6e6e6;border-radius:16px;padding:16px;background:#fff}
-.card .title{font-weight:700;font-size:20px;margin-bottom:6px}
-.price{font-size:20px;font-weight:800;margin:8px 0}
-.size-row{display:flex;gap:8px;align-items:center}
-select{appearance:none;width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:10px;background:#f6f6f6}
-.btn{width:100%;padding:14px 16px;border-radius:16px;border:none;font-size:18px}
-.btn.primary{background:#000;color:#fff}
-.btn.ghost{background:#fff;border:1px solid #e6e6e6;color:#0a58ca}
-.bottom{position:sticky;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #eee;padding:12px;display:flex;gap:12px}
-.sheet{position:fixed;left:0;right:0;bottom:0;background:#fff;border-radius:16px 16px 0 0;padding:16px;max-height:80vh;overflow:auto;z-index:1001} /* 🔹 */
-.backdrop{position:fixed;inset:0;background:rgba(0,0,0,.25);z-index:1000} /* 🔹 */
-.hidden{display:none}
-.row{display:flex;justify-content:space-between;align-items:center;margin:8px 0}
-.row input, .row textarea{width:100%;padding:12px;border:1px solid #ddd;border-radius:10px;background:#f6f6f6}
-.row label{font-weight:600;margin:8px 0}
+
+/* ========== КАРТОЧКИ ТОВАРОВ ========== */
+.products{display:grid;grid-template-columns:1fr;gap:12px;margin-top:10px;}
+.card{
+  border:1px solid #e6e6e6;border-radius:16px;padding:14px;
+  background:#fff;
+}
+.card .title{font-weight:700;font-size:20px;margin:6px 0 2px;}
+.price{font-size:20px;font-weight:800;margin:8px 0 6px;}
+.size-row{display:flex;gap:8px;align-items:center;margin-top:6px;}
+
+/* ====== ИЗОБРАЖЕНИЕ ТОВАРА ====== */
+.thumb{
+  width:100%;
+  aspect-ratio: 4 / 5;          /* «магазинный» вертикальный формат */
+  overflow:hidden;
+  border-radius:12px;
+  background:#f2f2f7;           /* плейсхолдер, если нет картинки */
+  margin-bottom:10px;
+}
+.thumb img{
+  width:100%; height:100%;
+  object-fit:cover; display:block;
+  background:#f2f2f7;
+}
+
+/* ========== ФОРМЫ / КНОПКИ ========== */
+select{
+  appearance:none; width:100%;
+  padding:10px 12px;
+  border:1px solid #ddd;border-radius:10px;background:#f6f6f6;
+  font-size:16px;
+}
+
+.btn{
+  width:100%;padding:14px 16px;border-radius:16px;border:none;
+  font-size:18px;cursor:pointer;
+}
+.btn.primary{background:#000;color:#fff;}
+.btn.ghost{background:#fff;border:1px solid #e6e6e6;color:#0a58ca;}
+
+.bottom{
+  position: sticky; bottom: 0; left: 0; right: 0;
+  background:#fff;border-top:1px solid #eee;
+  padding:12px calc(16px) max(12px, env(safe-area-inset-bottom));
+  display:flex;gap:12px; z-index: 40;
+}
+
+/* ========== МОДАЛКИ ========== */
+.sheet{
+  position:fixed;left:0;right:0;bottom:0;
+  background:#fff;border-radius:16px 16px 0 0;
+  padding:16px;max-height:80vh;overflow:auto;z-index:1001;
+  box-shadow: 0 -12px 40px rgba(0,0,0,.18);
+}
+.backdrop{position:fixed;inset:0;background:rgba(0,0,0,.28);z-index:1000;}
+.hidden{display:none;}
+
+.row{
+  display:flex;justify-content:space-between;align-items:center;margin:8px 0;gap:12px;
+}
+.row input,.row textarea{
+  width:100%;padding:12px;border:1px solid #ddd;border-radius:10px;background:#f6f6f6;font-size:16px;
+}
+.row label{font-weight:600;margin:8px 0;}
 .bad{border-color:#ff6a6a}
 
-/* product image */
-.thumb {
-  width: 100%;
-  aspect-ratio: 4/5;           /* «магазинный» формат */
-  overflow: hidden;
-  border-radius: 12px;
-  background: #f2f2f7;
-  margin-bottom: 10px;
+/* ========== АДАПТИВ ========== */
+@media (min-width: 520px){
+  .cat-grid{grid-template-columns: repeat(3, 1fr);}
+  .products{grid-template-columns: 1fr 1fr; gap:14px;}
 }
-.thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
+@media (min-width: 740px){
+  .products{grid-template-columns: repeat(3, 1fr);}
+}
+
+/* ========== ТЁМНАЯ ТЕМА (Telegram Night) ========== */
+@media (prefers-color-scheme: dark){
+  body, .topbar, .bottom, .card, .cat { background:#111; color:#eee; }
+  .subtitle{color:#aaa;}
+  .cat{border-color:#2a2a2a;}
+  .card{border-color:#2a2a2a;}
+  .cart-btn{background:#111;border-color:#2a2a2a;color:#eee;}
+  select{background:#1a1a1a;border-color:#2a2a2a;color:#eee;}
+  .thumb{background:#1a1a1a;}
+  .bottom{border-top-color:#222;}
+  .sheet{background:#121212;color:#eee;}
+  .backdrop{background:rgba(0,0,0,.5);}
+  .btn.ghost{background:#111;border-color:#2a2a2a;color:#79a9ff;}
 }
