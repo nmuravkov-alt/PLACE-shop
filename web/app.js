@@ -67,10 +67,23 @@ function normalizeImageUrl(urlRaw) {
   if (!urlRaw) return "";
   let u = String(urlRaw).trim();
 
-  // если уже локальная картинка — оставляем
-  if (u.startsWith("/images/")) return u;
+  // срезаем временные query-токены (?token=...)
+  const qIdx = u.indexOf("?");
+  if (qIdx > -1) u = u.slice(0, qIdx);
 
-  // иначе — через прокси нашего приложения
+  // Google Drive: /file/d/<id>/view  -> прямой
+  const m = u.match(/drive\.google\.com\/file\/d\/([^/]+)/i);
+  if (m && m[1]) {
+    u = `https://drive.google.com/uc?export=view&id=${m[1]}`;
+  }
+
+  // GitHub RAW: .../refs/heads/main/... -> .../main/...
+  u = u.replace(
+    /raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/refs\/heads\/main\//i,
+    "raw.githubusercontent.com/$1/$2/main/"
+  );
+
+  // ключевое: всегда просим через наш бэкенд
   return `/img?u=${encodeURIComponent(u)}`;
 }
 
