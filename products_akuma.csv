@@ -1,11 +1,11 @@
-title,category,subcategory,price,image_url,sizes_text,is_active
-"Japanese pants AKUMA #0321","Брюки/Джинсы","",6000,"https://drive.google.com/uc?id=1stXOPqpqf4ya-1z3FcEL1Y_fyJBLpM_O","S,M,L,XL,XXL",1
-"Cropped fit Winter puffer jackets AKUMA #0585","Куртки/Бомберы","",8000,"https://drive.google.com/uc?id=1GU2mKuayyg8rPs-xwTG4TPaFLNmNT0x2","S,M,L,XL,XXL,XXXL",1
-"Puffer Fur Winter jacket AKUMA #0586","Куртки/Бомберы","",8000,"https://drive.google.com/uc?id=1eshuRBuYYVVmOL7k0ChbSuBpKTLZj2Qi","S,M,L,XL,XXL,XXXL",1
-"Baggy sport pants AKUMA black #0340/1","Брюки/Джинсы","",5000,"https://drive.google.com/uc?id=1aoHaPRoa9iP7rJcQ9EQ5J12KEtXHpHvU","S,M,L,XL,XXL",1
-"Baggy sport pants AKUMA grey #0340/3","Брюки/Джинсы","",5000,"https://drive.google.com/uc?id=1C3G9sJbgDwlw9mY9CnN9nfKe9r6fWr_J","S,M,L,XL,XXL",1
-"Gorpcore AKUMA olive pants #0323/4","Брюки/Джинсы","",5000,"https://drive.google.com/uc?id=1ddoB7mWQZAr6h-824bH6BjdMQi1GDfYb","S,M,L,XL,XXL",1
-"Gorpcore AKUMA black pants #0323/1","Брюки/Джинсы","",5000,"https://drive.google.com/uc?id=1dHFahBvqvs2exlA9olCRNeZ8y2IvA9Kz","S,M,L,XL,XXL",1
-"Baggy oversized hoodie AKUMA Black #074/1","Толстовки/Свитера","",4500,"https://drive.google.com/uc?id=1_U4Ho4z7v8CrJwGGeuqjYP-VCN3TI7ND","S,M,L,XL,XXL,XXXL",1
-"Basic black jeans AKUMA #0338/1","Брюки/Джинсы","",5000,"https://drive.google.com/uc?id=1oWxtgmCCnoqYGRlXfNa7uN3Ze5nT14BJ","S,M,L,XL",1
-"Basic grey jeans AKUMA #0338/5","Брюки/Джинсы","",5000,"https://drive.google.com/uc?id=1pTDXaNHs0b9xomb6I2dabb1jIgbO8ovr","S,M,L,XL",1
+title,category,subcategory,price,image_url,sizes,is_active
+Japanese pants AKUMA #0321,Брюки/Джинсы,,6000,https://raw.githubusercontent.com/nmuravkov-alt/PLACE-shop/main/images/Japanese%20pants%20AKUMA%20%230321.jpg,"S,M,L,XL,XXL",1
+Cropped fit Winter puffer jackets AKUMA #0585,Куртки/Бомберы,,8000,https://raw.githubusercontent.com/nmuravkov-alt/PLACE-shop/main/images/Cropped%20fit%20Winter%20puffer%20jackets%20AKUMA%20%230585.jpg,"S,M,L,XL,XXL,XXXL",1
+Puffer Fur Winter jacket AKUMA #0586,Куртки/Бомберы,,8000,https://raw.githubusercontent.com/nmuravkov-alt/PLACE-shop/main/images/Puffer%20Fur%20Winter%20jacket%20AKUMA%20%230586.jpg,"S,M,L,XL,XXL,XXXL",1
+Baggy sport pants AKUMA black #0340/1,Брюки/Джинсы,,5000,https://raw.githubusercontent.com/nmuravkov-alt/PLACE-shop/main/images/Baggy%20sport%20pants%20AKUMA%20black%20%230340_1.jpg,"S,M,L,XL,XXL",1
+Baggy sport pants AKUMA grey #0340/3,Брюки/Джинсы,,5000,https://raw.githubusercontent.com/nmuravkov-alt/PLACE-shop/main/images/Baggy%20sport%20pants%20AKUMA%20grey%20%230340_3.jpg,"S,M,L,XL,XXL",1
+Gorpcore AKUMA olive pants #0323/4,Брюки/Джинсы,,5000,https://raw.githubusercontent.com/nmuravkov-alt/PLACE-shop/main/images/Gorpcore%20AKUMA%20olive%20pants%20%230323_4.jpg,"S,M,L,XL,XXL",1
+Gorpcore AKUMA black pants #0323/1,Брюки/Джинсы,,5000,https://raw.githubusercontent.com/nmuravkov-alt/PLACE-shop/main/images/Gorpcore%20AKUMA%20black%20pants%20%230323_1.jpg,"S,M,L,XL,XXL",1
+Baggy oversized hoodie AKUMA Black #074/1,Толстовки/Свитера,,4500,https://raw.githubusercontent.com/nmuravkov-alt/PLACE-shop/main/images/Baggy%20oversized%20hoodie%20AKUMA%20Black%20%23074_1.png,"S,M,L,XL,XXL,XXXL",1
+Basic black jeans AKUMA #0338/1,Брюки/Джинсы,,5000,https://raw.githubusercontent.com/nmuravkov-alt/PLACE-shop/main/images/Basic%20black%20jeans%20AKUMA%20%230338_1.jpg,"S,M,L,XL",1
+Basic grey jeans AKUMA #0338/5,Брюки/Джинсы,,5000,https://raw.githubusercontent.com/nmuravkov-alt/PLACE-shop/main/images/Basic%20grey%20jeans%20AKUMA%20%230338_5.jpg,"S,M,L,XL",1
