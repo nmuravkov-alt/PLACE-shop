@@ -3,9 +3,8 @@ const tg = window.Telegram?.WebApp;
 tg?.ready();
 
 // ========= Константы проекта =========
-// Если есть @username менеджера — укажи без @. Он надёжнее в WebApp (особенно на iOS).
-const MANAGER_USERNAME = "layoutplacebuy";   // <— поставь свой @ без @
-const MANAGER_ID       = 6773668793;         // резервный путь по id
+const MANAGER_USERNAME = "layoutplacebuy";   // @ без @
+const MANAGER_ID       = 6773668793;         // резерв по id
 
 // Относительный API (бот и статика на одном домене)
 const API = "";
@@ -30,8 +29,8 @@ const writeBtn     = $("#writeBtn");
 const checkoutBtn  = $("#checkoutBtn");
 const sheet        = $("#sheet");
 const backdrop     = $("#backdrop");
-const titleEl      = $("#shopTitle");   // в index.html у заголовка добавь id="shopTitle"
-const subtitleEl   = $("#subtitle");    // опционально id="subtitle" для подзаголовка
+const titleEl      = $("#shopTitle");
+const subtitleEl   = $("#subtitle");
 
 // ========= Утилиты =========
 function openSheet(html) {
@@ -57,6 +56,31 @@ function addToCart(p, size) {
   updateCartBadge();
 }
 function money(n){ return (n||0).toLocaleString('ru-RU') + " ₽"; }
+
+// — нормализация ссылок на изображения (GitHub/Drive), убираем временные токены —
+function normalizeImageUrl(urlRaw) {
+  if (!urlRaw) return "";
+  let u = String(urlRaw).trim();
+
+  // убрать query-токены (?token=... и т.п.)
+  const qIdx = u.indexOf("?");
+  if (qIdx > -1) u = u.slice(0, qIdx);
+
+  // Google Drive "view" -> прямой контент
+  // примеры: https://drive.google.com/file/d/FILE_ID/view  -> https://drive.google.com/uc?export=view&id=FILE_ID
+  const m = u.match(/drive\.google\.com\/file\/d\/([^/]+)/i);
+  if (m && m[1]) {
+    const id = m[1];
+    return `https://drive.google.com/uc?export=view&id=${id}`;
+  }
+
+  // GitHub raw с refs/heads/main -> лучше без "refs/heads"
+  // https://raw.githubusercontent.com/user/repo/refs/heads/main/path -> /user/repo/main/path
+  u = u.replace(/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/refs\/heads\/main\//i,
+                 "raw.githubusercontent.com/$1/$2/main/");
+
+  return u;
+}
 
 // ========= API =========
 async function getJSON(url){
@@ -100,7 +124,7 @@ async function drawProducts(){
   productsEl.innerHTML = "";
   const items = await loadProducts(state.category || "");
   items.forEach(p=>{
-    // набор размеров: в приоритете sizes_text из БД; для "Обувь" — цифры; иначе — одежда
+    // набор размеров: приоритет sizes_text из БД; для "Обувь" — цифры; иначе — одежда
     let sizes = [];
     if (p.sizes_text && String(p.sizes_text).trim()) {
       sizes = String(p.sizes_text).split(",").map(s=>s.trim()).filter(Boolean);
@@ -110,9 +134,16 @@ async function drawProducts(){
       sizes = CLOTHES_SIZES;
     }
 
+    // подготовим URL картинки
+    const imgUrl = normalizeImageUrl(p.image_url || p.image || "");
+
     const card = document.createElement("div");
     card.className = "card";
     card.innerHTML = `
+      ${imgUrl ? `
+        <div class="thumb">
+          <img src="${imgUrl}" alt="${p.title}" loading="lazy" referrerpolicy="no-referrer" />
+        </div>` : ``}
       <div class="title">${p.title}</div>
       <div class="price">${money(p.price)}</div>
       <div class="size-row">
@@ -125,6 +156,15 @@ async function drawProducts(){
       </div>
     `;
     productsEl.appendChild(card);
+
+    // если картинка не загрузилась — скрыть контейнер
+    const img = card.querySelector("img");
+    if (img) {
+      img.onerror = () => {
+        const th = img.closest(".thumb");
+        if (th) th.style.display = "none";
+      };
+    }
 
     $("#btn-"+p.id).onclick = () => {
       const sz = $("#size-"+p.id).value;
@@ -208,10 +248,7 @@ function openCheckout(){
       items: state.cart.map(it=>({ product_id: it.id, size: it.size, qty: it.qty }))
     };
 
-    // Отправка в Telegram (WebAppData)
     try { tg?.sendData?.(JSON.stringify(payload)); } catch(e){}
-
-    // Резервная отправка на backend
     try {
       await fetch(`${API}/api/order`, {
         method: "POST",
@@ -227,12 +264,10 @@ function openCheckout(){
 
 // ========= Нижние кнопки =========
 writeBtn.onclick = () => {
-  // 1) Переход по username на iOS/Android безопаснее через openLink
   if (MANAGER_USERNAME) {
     const url = `https://t.me/${MANAGER_USERNAME}`;
     if (tg?.openLink) tg.openLink(url); else window.open(url, "_blank");
   } else {
-    // 2) Резерв: прямой deep-link по user id
     const url = `tg://user?id=${MANAGER_ID}`;
     if (tg?.openTelegramLink) tg.openTelegramLink(url); else window.location.href = url;
   }
@@ -242,14 +277,13 @@ cartBtn.onclick = () => openCart();
 
 // ========= Инициализация =========
 (async function init(){
-  // Подтягиваем название магазина с backend и выставляем заголовки
   try {
     const cfg = await loadConfig();
     if (cfg?.title) {
       if (titleEl)   titleEl.textContent = cfg.title;
       document.title = cfg.title;
       if (subtitleEl && !subtitleEl.textContent.trim()) {
-        subtitleEl.textContent = ""; // заполни при желании
+        subtitleEl.textContent = "";
       }
     }
   } catch {}
