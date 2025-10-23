@@ -30,7 +30,7 @@ const writeBtn     = $("#writeBtn");
 const checkoutBtn  = $("#checkoutBtn");
 const sheet        = $("#sheet");
 const backdrop     = $("#backdrop");
-const titleEl      = $("#shopTitle");   // в index.html добавь id="shopTitle" на заголовок
+const titleEl      = $("#shopTitle");   // в index.html у заголовка добавь id="shopTitle"
 const subtitleEl   = $("#subtitle");    // опционально id="subtitle" для подзаголовка
 
 // ========= Утилиты =========
