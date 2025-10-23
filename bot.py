@@ -1,7 +1,9 @@
 import asyncio, json, logging, os, os.path as op
+from typing import Optional
+
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, User
 from aiogram.client.default import DefaultBotProperties
 from aiohttp import web
 from dotenv import load_dotenv
@@ -13,22 +15,25 @@ load_dotenv()
 BOT_TOKEN  = os.getenv("BOT_TOKEN", "").strip()
 PORT       = int(os.getenv("PORT", "8000"))
 
-# ADMIN_CHAT_IDS: можно указать несколько через запятую (user_id или id канала -100...)
+# ===== Название магазина из ENV =====
+STORE_TITLE = (os.getenv("STORE_TITLE", "LAYOUTPLACE Shop").strip() or "LAYOUTPLACE Shop")
+
+# ===== ADMIN_CHAT_IDS: можно указать несколько через запятую (user_id или id канала -100...) =====
 def _parse_ids(s: str):
     out = []
     for part in (s or "").split(","):
         part = part.strip()
-        if not part: 
+        if not part:
             continue
         try:
             out.append(int(part))
-        except:
+        except Exception:
             logging.warning("Skip bad ADMIN_CHAT_IDS item: %r", part)
     return out
 
 ADMIN_CHAT_IDS = _parse_ids(os.getenv("ADMIN_CHAT_IDS", "6773668793"))
 
-# Стартовая ссылка на WebApp
+# ===== Стартовая ссылка на WebApp =====
 WEBAPP_URL = (os.getenv("WEBAPP_URL","").strip() or "").rstrip("/")
 if WEBAPP_URL:
     if not WEBAPP_URL.startswith(("http://","https://")):
@@ -54,6 +59,9 @@ async def file_handler(request):
         return web.Response(status=404, text="Not found")
     return web.FileResponse(p)
 
+# Конфиг для фронта (тянем заголовок магазина)
+async def api_config(request):
+    return web.json_response({"title": STORE_TITLE})
 
 async def api_categories(request):
     return web.json_response(get_categories())
@@ -72,7 +80,7 @@ async def api_order(request):
     items, total = [], 0
     for it in data.get("items", []):
         p = get_product(int(it["product_id"]))
-        if not p: 
+        if not p:
             continue
         qty  = int(it.get("qty", 1))
         size = (it.get("size") or "")
@@ -85,19 +93,22 @@ async def api_order(request):
         telegram=data.get("telegram"),
         total_price=total, items=items
     )
-    # пробуем уведомить админов даже при REST-заказе
-    await notify_admins(order_id, data, total, items, from_user=None)
+    # пробуем уведомить админов даже при REST-заказе (user=None)
+    await notify_admins(order_id, data, total, items, user=None)
     return web.json_response({"ok": True, "order_id": order_id})
 
 def build_app():
     app = web.Application()
     app.router.add_get("/", index_handler)
 
-    # Добавляем эти две строки 👇
+    # Чтобы открывалось и /web и /web/
     app.router.add_get("/web/", index_handler)
     app.router.add_get("/web", index_handler)
 
     app.router.add_get("/web/{path:.*}", file_handler)
+
+    # API
+    app.router.add_get("/api/config", api_config)
     app.router.add_get("/api/categories", api_categories)
     app.router.add_get("/api/subcategories", api_subcategories)
     app.router.add_get("/api/products", api_products)
@@ -108,17 +119,20 @@ def build_app():
 # ---------- Bot ----------
 @dp.message(Command("start"))
 async def start(m: Message):
+    title_upper = STORE_TITLE.upper()
     kb = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(
-            text="Открыть LAYOUTPLACE SHOP",
+            text=f"Открыть {title_upper}",
             web_app=WebAppInfo(url=WEBAPP_URL or "https://example.com")
         )
     ]])
-    await m.answer("LAYOUTPLACE SHOP — мини-магазин в Telegram. Открой витрину ниже:", reply_markup=kb)
+    await m.answer(f"{title_upper} — мини-магазин в Telegram. Открой витрину ниже:", reply_markup=kb)
 
-async def notify_admins(order_id: int, data: dict, total: int, items_payload: list, from_user: Message | None):
-    uname = f"@{from_user.from_user.username}" if (from_user and from_user.from_user and from_user.from_user.username) else "—"
-    buyer_link = f"<a href='tg://user?id={from_user.from_user.id}'>профиль</a>" if (from_user and from_user.from_user) else "—"
+async def notify_admins(order_id: int, data: dict, total: int, items_payload: list, user: Optional[User]):
+    # user — это aiogram.types.User или None
+    uname = f"@{user.username}" if (user and user.username) else "—"
+    buyer_link = f"<a href='tg://user?id={user.id}'>профиль</a>" if user else "—"
+
     items_text = "\n".join([
         f"• {get_product(it['product_id'])['title']} "
         f"[{it.get('size') or '—'}] × {it.get('qty',1)} — {it.get('price',0)*it.get('qty',1)} ₽"
@@ -151,7 +165,7 @@ async def on_webapp_data(m: Message):
     items_payload, total = [], 0
     for it in data.get("items", []):
         p = get_product(int(it["product_id"]))
-        if not p: 
+        if not p:
             continue
         qty  = int(it.get("qty", 1))
         size = (it.get("size") or "")
@@ -172,7 +186,7 @@ async def on_webapp_data(m: Message):
     )
 
     await m.answer(f"✅ Заказ №{order_id} оформлен.\n\n{THANKYOU_TEXT}")
-    await notify_admins(order_id, data, total, items_payload, from_user=m)
+    await notify_admins(order_id, data, total, items_payload, user=m.from_user)
 
 async def main():
     assert BOT_TOKEN, "BOT_TOKEN is not set"
