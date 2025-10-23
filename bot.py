@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, User
 from aiogram.client.default import DefaultBotProperties
-from aiohttp import web
+from aiohttp import web, ClientSession
 from dotenv import load_dotenv
 
 from db import get_categories, get_subcategories, get_products, get_product, create_order
@@ -18,7 +18,6 @@ PORT       = int(os.getenv("PORT", "8000"))
 # ===== Название магазина из ENV =====
 STORE_TITLE = (os.getenv("STORE_TITLE", "LAYOUTPLACE Shop").strip() or "LAYOUTPLACE Shop")
 
-# ===== ADMIN_CHAT_IDS: можно указать несколько через запятую (user_id или id канала -100...) =====
 def _parse_ids(s: str):
     out = []
     for part in (s or "").split(","):
@@ -33,7 +32,6 @@ def _parse_ids(s: str):
 
 ADMIN_CHAT_IDS = _parse_ids(os.getenv("ADMIN_CHAT_IDS", "6773668793"))
 
-# ===== Стартовая ссылка на WebApp =====
 WEBAPP_URL = (os.getenv("WEBAPP_URL","").strip() or "").rstrip("/")
 if WEBAPP_URL:
     if not WEBAPP_URL.startswith(("http://","https://")):
@@ -52,14 +50,13 @@ async def index_handler(request):
 
 async def file_handler(request):
     path = request.match_info.get("path", "")
-    if not path:  # если просто /web/ без файла
+    if not path:
         return web.FileResponse(op.join("web", "index.html"))
     p = op.join("web", path)
     if not op.isfile(p):
         return web.Response(status=404, text="Not found")
     return web.FileResponse(p)
 
-# Конфиг для фронта (тянем заголовок магазина)
 async def api_config(request):
     return web.json_response({"title": STORE_TITLE})
 
@@ -93,21 +90,61 @@ async def api_order(request):
         telegram=data.get("telegram"),
         total_price=total, items=items
     )
-    # пробуем уведомить админов даже при REST-заказе (user=None)
     await notify_admins(order_id, data, total, items, user=None)
     return web.json_response({"ok": True, "order_id": order_id})
+
+# ---------- ПРОКСИ-КАРТИНОК ----------
+# /img?u=<absolute-url>  -> отдаём контент с внешнего URL из нашего домена
+async def img_proxy(request):
+    url = request.rel_url.query.get("u", "")
+    if not (url.startswith("http://") or url.startswith("https://")):
+        return web.Response(status=400, text="bad url")
+    # небольшая безопасная белая-лист фильтрация при желании:
+    # if not any(host in url for host in ("raw.githubusercontent.com","drive.google.com")):
+    #     return web.Response(status=403, text="forbidden")
+
+    # убираем временные query токены
+    qpos = url.find("?")
+    if qpos > -1:
+        url = url[:qpos]
+
+    # Google Drive /file/d/<id>/view -> прямой
+    # https://drive.google.com/file/d/FILE_ID/view  ->  https://drive.google.com/uc?export=view&id=FILE_ID
+    import re
+    m = re.search(r"drive\.google\.com\/file\/d\/([^\/]+)", url, flags=re.I)
+    if m:
+        file_id = m.group(1)
+        url = f"https://drive.google.com/uc?export=view&id={file_id}"
+
+    # GitHub refs/heads/main -> main
+    url = re.sub(
+        r"raw\.githubusercontent\.com\/([^\/]+)\/([^\/]+)\/refs\/heads\/main\/",
+        r"raw.githubusercontent.com/\1/\2/main/",
+        url,
+        flags=re.I
+    )
+
+    try:
+        async with ClientSession() as sess:
+            async with sess.get(url) as resp:
+                if resp.status != 200:
+                    return web.Response(status=resp.status, text="fetch error")
+                data = await resp.read()
+                ctype = resp.headers.get("Content-Type", "image/jpeg")
+                headers = {"Cache-Control":"public, max-age=31536000"}
+                return web.Response(body=data, content_type=ctype, headers=headers)
+    except Exception as e:
+        logging.exception("IMG proxy error: %s", e)
+        return web.Response(status=502, text="proxy error")
 
 def build_app():
     app = web.Application()
     app.router.add_get("/", index_handler)
-
-    # Чтобы открывалось и /web и /web/
     app.router.add_get("/web/", index_handler)
     app.router.add_get("/web", index_handler)
-
     app.router.add_get("/web/{path:.*}", file_handler)
 
-    # 🔹 Раздаём изображения: файлы из папки ./images будут доступны по /images/...
+    # Статика из репы (если будешь класть JPG прямо в /images)
     app.router.add_static("/images/", path="images", show_index=False)
 
     # API
@@ -116,8 +153,11 @@ def build_app():
     app.router.add_get("/api/subcategories", api_subcategories)
     app.router.add_get("/api/products", api_products)
     app.router.add_post("/api/order", api_order)
-    return app
 
+    # 🔹 новый прокси
+    app.router.add_get("/img", img_proxy)
+
+    return app
 
 # ---------- Bot ----------
 @dp.message(Command("start"))
@@ -132,10 +172,8 @@ async def start(m: Message):
     await m.answer(f"{title_upper} — мини-магазин в Telegram. Открой витрину ниже:", reply_markup=kb)
 
 async def notify_admins(order_id: int, data: dict, total: int, items_payload: list, user: Optional[User]):
-    # user — это aiogram.types.User или None
     uname = f"@{user.username}" if (user and user.username) else "—"
     buyer_link = f"<a href='tg://user?id={user.id}'>профиль</a>" if user else "—"
-
     items_text = "\n".join([
         f"• {get_product(it['product_id'])['title']} "
         f"[{it.get('size') or '—'}] × {it.get('qty',1)} — {it.get('price',0)*it.get('qty',1)} ₽"
