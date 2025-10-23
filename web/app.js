@@ -58,27 +58,27 @@ function addToCart(p, size) {
 function money(n){ return (n||0).toLocaleString('ru-RU') + " ₽"; }
 
 /**
- * Нормализация ссылок на изображения — БЕЗ прокси.
- * Поддерживает:
- * - GitHub RAW (убираем refs/heads и query-токены)
+ * Нормализация ссылок на изображения + проксирование внешних URL через /img.
+ * - /images/... (локальные файлы) — отдаем как есть
  * - Google Drive: /file/d/<id>/view -> uc?export=view&id=<id>
- * - Локальные /images/... — как есть
+ * - GitHub RAW: убираем refs/heads в пути
+ * - Любой внешний http(s) -> через наш backend: /img?u=<encoded>
  */
 function normalizeImageUrl(urlRaw) {
   if (!urlRaw) return "";
   let u = String(urlRaw).trim();
 
-  // локальные
+  // локальный ассет из репы
   if (u.startsWith("/images/")) return u;
 
-  // убрать временные query токены
+  // убрать временные query-токены
   const qIdx = u.indexOf("?");
   if (qIdx > -1) u = u.slice(0, qIdx);
 
   // Drive: /file/d/<id>/view -> uc
   const m = u.match(/drive\.google\.com\/file\/d\/([^/]+)/i);
   if (m && m[1]) {
-    return `https://drive.google.com/uc?export=view&id=${m[1]}`;
+    u = `https://drive.google.com/uc?export=view&id=${m[1]}`;
   }
 
   // GitHub RAW: refs/heads/main -> main
@@ -87,7 +87,10 @@ function normalizeImageUrl(urlRaw) {
     "raw.githubusercontent.com/$1/$2/main/"
   );
 
-  // остаётся как есть
+  // ВСЕ внешние ссылки — через наш прокси (Telegram/iOS любят резать прямые)
+  if (u.startsWith("http://") || u.startsWith("https://")) {
+    return `/img?u=${encodeURIComponent(u)}`;
+  }
   return u;
 }
 
@@ -165,11 +168,13 @@ async function drawProducts(){
     `;
     productsEl.appendChild(card);
 
+    // если картинка не загрузилась — скрыть контейнер и подсветить в консоли
     const img = card.querySelector("img");
     if (img) {
       img.onerror = () => {
         const th = img.closest(".thumb");
         if (th) th.style.display = "none";
+        console.warn("Image failed:", imgUrl, "for product:", p.title);
       };
     }
 
