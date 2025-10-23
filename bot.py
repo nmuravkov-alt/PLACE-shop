@@ -107,6 +107,9 @@ def build_app():
 
     app.router.add_get("/web/{path:.*}", file_handler)
 
+    # 🔹 Раздаём изображения: файлы из папки ./images будут доступны по /images/...
+    app.router.add_static("/images/", path="images", show_index=False)
+
     # API
     app.router.add_get("/api/config", api_config)
     app.router.add_get("/api/categories", api_categories)
