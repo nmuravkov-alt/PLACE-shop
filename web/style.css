@@ -25,3 +25,19 @@ select{appearance:none;width:100%;padding:10px 12px;border:1px solid #ddd;border
 .row input, .row textarea{width:100%;padding:12px;border:1px solid #ddd;border-radius:10px;background:#f6f6f6}
 .row label{font-weight:600;margin:8px 0}
 .bad{border-color:#ff6a6a}
+
+/* product image */
+.thumb {
+  width: 100%;
+  aspect-ratio: 4/5;           /* «магазинный» формат */
+  overflow: hidden;
+  border-radius: 12px;
+  background: #f2f2f7;
+  margin-bottom: 10px;
+}
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
