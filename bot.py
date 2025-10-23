@@ -1,33 +1,25 @@
 import asyncio, json, logging, os, os.path as op
 from typing import Optional
-
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, User
 from aiogram.client.default import DefaultBotProperties
 from aiohttp import web, ClientSession
 from dotenv import load_dotenv
-
 from db import get_categories, get_subcategories, get_products, get_product, create_order
 
 load_dotenv()
-
 BOT_TOKEN  = os.getenv("BOT_TOKEN", "").strip()
 PORT       = int(os.getenv("PORT", "8000"))
-
-# ===== Название магазина из ENV =====
 STORE_TITLE = (os.getenv("STORE_TITLE", "LAYOUTPLACE Shop").strip() or "LAYOUTPLACE Shop")
 
 def _parse_ids(s: str):
     out = []
     for part in (s or "").split(","):
         part = part.strip()
-        if not part:
-            continue
-        try:
-            out.append(int(part))
-        except Exception:
-            logging.warning("Skip bad ADMIN_CHAT_IDS item: %r", part)
+        if not part: continue
+        try: out.append(int(part))
+        except Exception: logging.warning("Skip bad ADMIN_CHAT_IDS item: %r", part)
     return out
 
 ADMIN_CHAT_IDS = _parse_ids(os.getenv("ADMIN_CHAT_IDS", "6773668793"))
@@ -77,7 +69,7 @@ async def api_order(request):
     items, total = [], 0
     for it in data.get("items", []):
         p = get_product(int(it["product_id"]))
-        if not p:
+        if not p: 
             continue
         qty  = int(it.get("qty", 1))
         size = (it.get("size") or "")
@@ -93,30 +85,22 @@ async def api_order(request):
     await notify_admins(order_id, data, total, items, user=None)
     return web.json_response({"ok": True, "order_id": order_id})
 
-# ---------- ПРОКСИ-КАРТИНОК ----------
-# /img?u=<absolute-url>  -> отдаём контент с внешнего URL из нашего домена
+# ---------- IMG PROXY ----------
 async def img_proxy(request):
     url = request.rel_url.query.get("u", "")
     if not (url.startswith("http://") or url.startswith("https://")):
         return web.Response(status=400, text="bad url")
-    # небольшая безопасная белая-лист фильтрация при желании:
-    # if not any(host in url for host in ("raw.githubusercontent.com","drive.google.com")):
-    #     return web.Response(status=403, text="forbidden")
 
-    # убираем временные query токены
     qpos = url.find("?")
     if qpos > -1:
         url = url[:qpos]
 
-    # Google Drive /file/d/<id>/view -> прямой
-    # https://drive.google.com/file/d/FILE_ID/view  ->  https://drive.google.com/uc?export=view&id=FILE_ID
     import re
     m = re.search(r"drive\.google\.com\/file\/d\/([^\/]+)", url, flags=re.I)
     if m:
         file_id = m.group(1)
         url = f"https://drive.google.com/uc?export=view&id={file_id}"
 
-    # GitHub refs/heads/main -> main
     url = re.sub(
         r"raw\.githubusercontent\.com\/([^\/]+)\/([^\/]+)\/refs\/heads\/main\/",
         r"raw.githubusercontent.com/\1/\2/main/",
@@ -144,8 +128,9 @@ def build_app():
     app.router.add_get("/web", index_handler)
     app.router.add_get("/web/{path:.*}", file_handler)
 
-    # Статика из репы (если будешь класть JPG прямо в /images)
-    app.router.add_static("/images/", path="images", show_index=False)
+    # 🔸 Подключаем статику /images/ ТОЛЬКО если каталог существует
+    if op.isdir("images"):
+        app.router.add_static("/images/", path="images", show_index=False)
 
     # API
     app.router.add_get("/api/config", api_config)
@@ -154,9 +139,8 @@ def build_app():
     app.router.add_get("/api/products", api_products)
     app.router.add_post("/api/order", api_order)
 
-    # 🔹 новый прокси
+    # IMG proxy
     app.router.add_get("/img", img_proxy)
-
     return app
 
 # ---------- Bot ----------
@@ -206,7 +190,7 @@ async def on_webapp_data(m: Message):
     items_payload, total = [], 0
     for it in data.get("items", []):
         p = get_product(int(it["product_id"]))
-        if not p:
+        if not p: 
             continue
         qty  = int(it.get("qty", 1))
         size = (it.get("size") or "")
