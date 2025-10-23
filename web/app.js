@@ -58,35 +58,37 @@ function addToCart(p, size) {
 function money(n){ return (n||0).toLocaleString('ru-RU') + " ₽"; }
 
 /**
- * Нормализация ссылок на изображения:
- * - /images/... — отдаем напрямую (статик с бэка)
- * - любые внешние (GitHub RAW, Google Drive, и т.п.) — через наш прокси /img?u=...
+ * Нормализация ссылок на изображения — БЕЗ прокси.
+ * Поддерживает:
+ * - GitHub RAW (убираем refs/heads и query-токены)
+ * - Google Drive: /file/d/<id>/view -> uc?export=view&id=<id>
+ * - Локальные /images/... — как есть
  */
 function normalizeImageUrl(urlRaw) {
   if (!urlRaw) return "";
   let u = String(urlRaw).trim();
 
-  // локальные изображения из репозитория
+  // локальные
   if (u.startsWith("/images/")) return u;
 
-  // срежем временные query-токены (?token=...)
+  // убрать временные query токены
   const qIdx = u.indexOf("?");
   if (qIdx > -1) u = u.slice(0, qIdx);
 
-  // Google Drive: /file/d/<id>/view  -> прямой контент
+  // Drive: /file/d/<id>/view -> uc
   const m = u.match(/drive\.google\.com\/file\/d\/([^/]+)/i);
   if (m && m[1]) {
-    u = `https://drive.google.com/uc?export=view&id=${m[1]}`;
+    return `https://drive.google.com/uc?export=view&id=${m[1]}`;
   }
 
-  // GitHub RAW: .../refs/heads/main/... -> .../main/...
+  // GitHub RAW: refs/heads/main -> main
   u = u.replace(
     /raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/refs\/heads\/main\//i,
     "raw.githubusercontent.com/$1/$2/main/"
   );
 
-  // отдаём через наш домен (прокси /img реализован в bot.py)
-  return `/img?u=${encodeURIComponent(u)}`;
+  // остаётся как есть
+  return u;
 }
 
 // ========= API =========
@@ -131,7 +133,7 @@ async function drawProducts(){
   productsEl.innerHTML = "";
   const items = await loadProducts(state.category || "");
   items.forEach(p=>{
-    // набор размеров: приоритет sizes_text из БД; для "Обувь" — цифры; иначе — одежда
+    // размеры
     let sizes = [];
     if (p.sizes_text && String(p.sizes_text).trim()) {
       sizes = String(p.sizes_text).split(",").map(s=>s.trim()).filter(Boolean);
@@ -141,7 +143,6 @@ async function drawProducts(){
       sizes = CLOTHES_SIZES;
     }
 
-    // подготовим URL картинки
     const imgUrl = normalizeImageUrl(p.image_url || p.image || "");
 
     const card = document.createElement("div");
@@ -164,7 +165,6 @@ async function drawProducts(){
     `;
     productsEl.appendChild(card);
 
-    // если картинка не загрузилась — скрыть контейнер
     const img = card.querySelector("img");
     if (img) {
       img.onerror = () => {
