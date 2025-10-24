@@ -153,4 +153,21 @@ select{
   object-fit: contain; /* не обрезаем логотип */
   display: block;
 }
+/* ===== Просмотр фото в полноэкранном режиме ===== */
+#imgViewer {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.9);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 2000;
+  cursor: zoom-out;
+}
+#imgViewer img {
+  max-width: 95%;
+  max-height: 95%;
+  border-radius: 12px;
+  object-fit: contain;
+}
 .hidden { display: none; }
