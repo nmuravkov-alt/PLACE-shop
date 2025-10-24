@@ -14,7 +14,7 @@ def dicts(cur):
     return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
-# ---------- settings (логотип, прочие ключ-значение) ----------
+# ---------- settings (логотип и любые key/value) ----------
 def get_setting(key: str, default: str = "") -> str:
     with connect() as conn:
         cur = conn.execute("SELECT value FROM settings WHERE key = ?", (key,))
@@ -85,6 +85,7 @@ def _row_to_product(r: dict) -> dict:
         "subcategory": r.get("subcategory") or "",
         "price": r["price"],
         "image_url": r.get("image_url") or "",
+        "description": r.get("description") or "",  # ← описание для фронта
         # два поля для фронта: список и строка
         "sizes": sizes,
         "sizes_text": ",".join(sizes) if sizes else "",
