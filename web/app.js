@@ -173,7 +173,7 @@ async function drawProducts(){
     }
 
     const imgUrl = normalizeImageUrl(p.image_url || p.image || "");
-    const desc   = (p.description || "").trim(); // <— описание из API (БД)
+    const desc   = (p.description || "").trim(); // описание из API (БД)
 
     const card = document.createElement("div");
     card.className = "card";
@@ -338,20 +338,25 @@ cartBtn.onclick = () => openCart();
 
   updateCartBadge();
 })();
+
 // ========= Просмотр фото =========
 const imgViewer = document.querySelector("#imgViewer");
 const imgViewerImg = imgViewer?.querySelector("img");
 
-productsEl.addEventListener("click", (e) => {
-  const img = e.target.closest(".thumb img");
-  if (!img) return;
-  const src = img.getAttribute("src");
-  if (!src) return;
-  imgViewerImg.src = src;
-  imgViewer.classList.remove("hidden");
-});
+// Делегирование клика по картинке товара
+if (productsEl && imgViewer && imgViewerImg) {
+  productsEl.addEventListener("click", (e) => {
+    const target = e.target;
+    const img = target && target.closest ? target.closest(".thumb img") : null;
+    if (!img) return;
+    const src = img.getAttribute("src");
+    if (!src) return;
+    imgViewerImg.src = src;
+    imgViewer.classList.remove("hidden");
+  });
 
-imgViewer.addEventListener("click", () => {
-  imgViewer.classList.add("hidden");
-  imgViewerImg.src = "";
-});
+  imgViewer.addEventListener("click", () => {
+    imgViewer.classList.add("hidden");
+    imgViewerImg.src = "";
+  });
+}
