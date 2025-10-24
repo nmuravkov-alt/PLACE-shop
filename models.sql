@@ -1,4 +1,5 @@
-CREATE TABLE IF NOT EXISTS products(
+-- ===== таблица товаров =====
+CREATE TABLE IF NOT EXISTS products (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
     category TEXT,
@@ -8,7 +9,9 @@ CREATE TABLE IF NOT EXISTS products(
     sizes TEXT,
     is_active INTEGER NOT NULL DEFAULT 1
 );
-CREATE TABLE IF NOT EXISTS orders(
+
+-- ===== таблица заказов =====
+CREATE TABLE IF NOT EXISTS orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     user_id INTEGER,
@@ -20,11 +23,19 @@ CREATE TABLE IF NOT EXISTS orders(
     telegram TEXT,
     total_price INTEGER NOT NULL DEFAULT 0
 );
-CREATE TABLE IF NOT EXISTS order_items(
+
+-- ===== позиции в заказе =====
+CREATE TABLE IF NOT EXISTS order_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_id INTEGER NOT NULL,
     product_id INTEGER NOT NULL,
     size TEXT,
     qty INTEGER NOT NULL DEFAULT 1,
     price INTEGER NOT NULL DEFAULT 0
+);
+
+-- ===== настройки магазина (логотип, название и т.д.) =====
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
 );
