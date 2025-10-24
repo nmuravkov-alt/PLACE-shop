@@ -1,25 +1,32 @@
-import asyncio, json, logging, os, os.path as op
+import asyncio, json, logging, os, os.path as op, sqlite3
 from typing import Optional
+
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, User
 from aiogram.client.default import DefaultBotProperties
 from aiohttp import web, ClientSession
 from dotenv import load_dotenv
+
 from db import get_categories, get_subcategories, get_products, get_product, create_order
 
 load_dotenv()
-BOT_TOKEN  = os.getenv("BOT_TOKEN", "").strip()
-PORT       = int(os.getenv("PORT", "8000"))
+
+BOT_TOKEN   = os.getenv("BOT_TOKEN", "").strip()
+PORT        = int(os.getenv("PORT", "8000"))
 STORE_TITLE = (os.getenv("STORE_TITLE", "LAYOUTPLACE Shop").strip() or "LAYOUTPLACE Shop")
+DB_PATH     = os.getenv("DB_PATH", "data.sqlite")
 
 def _parse_ids(s: str):
     out = []
     for part in (s or "").split(","):
         part = part.strip()
-        if not part: continue
-        try: out.append(int(part))
-        except Exception: logging.warning("Skip bad ADMIN_CHAT_IDS item: %r", part)
+        if not part: 
+            continue
+        try:
+            out.append(int(part))
+        except Exception:
+            logging.warning("Skip bad ADMIN_CHAT_IDS item: %r", part)
     return out
 
 ADMIN_CHAT_IDS = _parse_ids(os.getenv("ADMIN_CHAT_IDS", "6773668793"))
@@ -36,6 +43,17 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp  = Dispatcher()
 
+# ---- helpers ----
+def _get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
+    """Читает settings.value по ключу; если таблицы/ключа нет — вернет default."""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cur = conn.execute("SELECT value FROM settings WHERE key=?", (key,))
+            row = cur.fetchone()
+            return row[0] if row and row[0] is not None else default
+    except Exception:
+        return default
+
 # ---------- Web ----------
 async def index_handler(request):
     return web.FileResponse(op.join("web", "index.html"))
@@ -49,8 +67,10 @@ async def file_handler(request):
         return web.Response(status=404, text="Not found")
     return web.FileResponse(p)
 
+# Конфиг для фронта: тайтл + логотип бренда (если есть)
 async def api_config(request):
-    return web.json_response({"title": STORE_TITLE})
+    logo_url = _get_setting("logo_url", None)
+    return web.json_response({"title": STORE_TITLE, "logo_url": logo_url})
 
 async def api_categories(request):
     return web.json_response(get_categories())
@@ -69,7 +89,7 @@ async def api_order(request):
     items, total = [], 0
     for it in data.get("items", []):
         p = get_product(int(it["product_id"]))
-        if not p: 
+        if not p:
             continue
         qty  = int(it.get("qty", 1))
         size = (it.get("size") or "")
@@ -128,18 +148,15 @@ def build_app():
     app.router.add_get("/web", index_handler)
     app.router.add_get("/web/{path:.*}", file_handler)
 
-    # 🔸 Подключаем статику /images/ ТОЛЬКО если каталог существует
     if op.isdir("images"):
         app.router.add_static("/images/", path="images", show_index=False)
 
-    # API
     app.router.add_get("/api/config", api_config)
     app.router.add_get("/api/categories", api_categories)
     app.router.add_get("/api/subcategories", api_subcategories)
     app.router.add_get("/api/products", api_products)
     app.router.add_post("/api/order", api_order)
 
-    # IMG proxy
     app.router.add_get("/img", img_proxy)
     return app
 
@@ -190,7 +207,7 @@ async def on_webapp_data(m: Message):
     items_payload, total = [], 0
     for it in data.get("items", []):
         p = get_product(int(it["product_id"]))
-        if not p: 
+        if not p:
             continue
         qty  = int(it.get("qty", 1))
         size = (it.get("size") or "")
