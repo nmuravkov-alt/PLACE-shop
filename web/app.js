@@ -15,12 +15,13 @@ const SHOES_SIZES   = ["36","37","38","39","40","41","42","43","44","45"];
 
 // ========= Состояние =========
 let state = {
-  category: null,
-  cart: [] // [{key,id,title,price,size,qty}]
+  category: null,   // ВАЖНО: на старте null → это "главная" с логотипом
+  cart: []          // [{key,id,title,price,size,qty}]
 };
 
 // ========= DOM =========
 const $ = (sel) => document.querySelector(sel);
+const heroEl       = $("#hero");
 const categoriesEl = $("#categories");
 const productsEl   = $("#products");
 const cartBtn      = $("#cartBtn");
@@ -58,39 +59,31 @@ function addToCart(p, size) {
 function money(n){ return (n||0).toLocaleString('ru-RU') + " ₽"; }
 
 /**
- * Нормализация ссылок на изображения + проксирование внешних URL через /img.
- * - /images/... (локальные файлы) — отдаем как есть
+ * Нормализация ссылок на изображения.
+ * Поддерживает:
+ * - GitHub RAW (убираем refs/heads и query-токены)
  * - Google Drive: /file/d/<id>/view -> uc?export=view&id=<id>
- * - GitHub RAW: убираем refs/heads в пути
- * - Любой внешний http(s) -> через наш backend: /img?u=<encoded>
+ * - Локальные /images/... — как есть
  */
 function normalizeImageUrl(urlRaw) {
   if (!urlRaw) return "";
   let u = String(urlRaw).trim();
 
-  // локальный ассет из репы
-  if (u.startsWith("/images/")) return u;
+  if (u.startsWith("/images/")) return u; // локальные
 
-  // убрать временные query-токены
   const qIdx = u.indexOf("?");
   if (qIdx > -1) u = u.slice(0, qIdx);
 
-  // Drive: /file/d/<id>/view -> uc
   const m = u.match(/drive\.google\.com\/file\/d\/([^/]+)/i);
   if (m && m[1]) {
-    u = `https://drive.google.com/uc?export=view&id=${m[1]}`;
+    return `https://drive.google.com/uc?export=view&id=${m[1]}`;
   }
 
-  // GitHub RAW: refs/heads/main -> main
   u = u.replace(
     /raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/refs\/heads\/main\//i,
     "raw.githubusercontent.com/$1/$2/main/"
   );
 
-  // ВСЕ внешние ссылки — через наш прокси (Telegram/iOS любят резать прямые)
-  if (u.startsWith("http://") || u.startsWith("https://")) {
-    return `/img?u=${encodeURIComponent(u)}`;
-  }
   return u;
 }
 
@@ -104,7 +97,7 @@ async function loadConfig(){
   try {
     return await getJSON(`${API}/api/config`);
   } catch {
-    return { title: "LAYOUTPLACE Shop" };
+    return { title: "LAYOUTPLACE Shop", logo_url: "" };
   }
 }
 async function loadCategories(){
@@ -119,6 +112,27 @@ async function loadProducts(category, sub=""){
 }
 
 // ========= Рендер =========
+function renderHome(logoUrl){
+  // Показать логотип, скрыть товары
+  productsEl.innerHTML = "";
+  const hasLogo = !!(logoUrl && String(logoUrl).trim());
+  if (hasLogo) {
+    const imgSrc = normalizeImageUrl(logoUrl);
+    heroEl.innerHTML = `
+      <div class="hero-img">
+        <img src="${imgSrc}" alt="brand logo" loading="lazy" referrerpolicy="no-referrer"/>
+      </div>
+    `;
+    heroEl.classList.remove("hidden");
+    const img = heroEl.querySelector("img");
+    if (img) {
+      img.onerror = () => { heroEl.classList.add("hidden"); };
+    }
+  } else {
+    heroEl.classList.add("hidden");
+  }
+}
+
 function renderCategories(list){
   categoriesEl.innerHTML = "";
   const frag = document.createDocumentFragment();
@@ -126,7 +140,11 @@ function renderCategories(list){
     const div = document.createElement("div");
     div.className = "cat";
     div.textContent = cat.title;
-    div.onclick = () => { state.category = cat.title; drawProducts(); };
+    div.onclick = () => {
+      state.category = cat.title;
+      heroEl.classList.add("hidden"); // ушли с главной — прячем логотип
+      drawProducts();
+    };
     frag.appendChild(div);
   });
   categoriesEl.appendChild(frag);
@@ -168,13 +186,11 @@ async function drawProducts(){
     `;
     productsEl.appendChild(card);
 
-    // если картинка не загрузилась — скрыть контейнер и подсветить в консоли
     const img = card.querySelector("img");
     if (img) {
       img.onerror = () => {
         const th = img.closest(".thumb");
         if (th) th.style.display = "none";
-        console.warn("Image failed:", imgUrl, "for product:", p.title);
       };
     }
 
@@ -298,13 +314,19 @@ cartBtn.onclick = () => openCart();
         subtitleEl.textContent = "";
       }
     }
-  } catch {}
+    // Показать логотип на главной
+    renderHome(cfg?.logo_url || "");
+  } catch (e) {
+    // если конфиг не загрузился — просто спрячем герой
+    heroEl?.classList?.add("hidden");
+  }
 
   try {
     const cats = await loadCategories();
     renderCategories(cats);
-    state.category = (cats[0]?.title) || null;
+    // ВНИМАНИЕ: НЕ выбираем первую категорию автоматически!
+    // Пользователь кликает — тогда рендерим товары и прячем лого.
   } catch {}
-  await drawProducts();
+
   updateCartBadge();
 })();
