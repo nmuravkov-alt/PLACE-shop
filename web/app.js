@@ -15,7 +15,7 @@ const SHOES_SIZES   = ["36","37","38","39","40","41","42","43","44","45"];
 
 // ========= Состояние =========
 let state = {
-  category: null,   // ВАЖНО: на старте null → это "главная" с логотипом
+  category: null,   // null → главная с логотипом
   cart: []          // [{key,id,title,price,size,qty}]
 };
 
@@ -34,6 +34,14 @@ const titleEl      = $("#shopTitle");
 const subtitleEl   = $("#subtitle");
 
 // ========= Утилиты =========
+function esc(s){
+  return String(s ?? "")
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;")
+    .replace(/'/g,"&#39;");
+}
 function openSheet(html) {
   sheet.innerHTML = html;
   sheet.classList.remove("hidden");
@@ -165,16 +173,18 @@ async function drawProducts(){
     }
 
     const imgUrl = normalizeImageUrl(p.image_url || p.image || "");
+    const desc   = (p.description || "").trim(); // <— описание из API (БД)
 
     const card = document.createElement("div");
     card.className = "card";
     card.innerHTML = `
       ${imgUrl ? `
         <div class="thumb">
-          <img src="${imgUrl}" alt="${p.title}" loading="lazy" referrerpolicy="no-referrer" />
+          <img src="${imgUrl}" alt="${esc(p.title)}" loading="lazy" referrerpolicy="no-referrer" />
         </div>` : ``}
-      <div class="title">${p.title}</div>
+      <div class="title">${esc(p.title)}</div>
       <div class="price">${money(p.price)}</div>
+      ${desc ? `<div class="desc">${esc(desc)}</div>` : ``}
       <div class="size-row">
         <select id="size-${p.id}">
           ${sizes.map(s=>`<option value="${s}">${s}</option>`).join("")}
@@ -211,7 +221,7 @@ function openCart(){
   const rows = state.cart.map((it,idx)=>`
     <div class="row">
       <div>
-        <div><b>${it.title}</b> ${it.size?`[${it.size}]`:""}</div>
+        <div><b>${esc(it.title)}</b> ${it.size?`[${esc(it.size)}]`:""}</div>
         <div>${money(it.price)} × ${it.qty}</div>
       </div>
       <div>
@@ -317,15 +327,13 @@ cartBtn.onclick = () => openCart();
     // Показать логотип на главной
     renderHome(cfg?.logo_url || "");
   } catch (e) {
-    // если конфиг не загрузился — просто спрячем герой
     heroEl?.classList?.add("hidden");
   }
 
   try {
     const cats = await loadCategories();
     renderCategories(cats);
-    // ВНИМАНИЕ: НЕ выбираем первую категорию автоматически!
-    // Пользователь кликает — тогда рендерим товары и прячем лого.
+    // На главной остаёмся, пока пользователь не кликнет категорию.
   } catch {}
 
   updateCartBadge();
