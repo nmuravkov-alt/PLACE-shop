@@ -3,7 +3,6 @@ from pathlib import Path
 
 # --- Настройки ---
 DB_PATH  = os.getenv("DB_PATH", "data.sqlite")
-
 # Можно задать CSV через ENV: CSV_FILE=products_akuma.csv
 CSV_FILE = os.getenv("CSV_FILE", "products_template.csv")
 
@@ -12,7 +11,7 @@ CSV_FILE = os.getenv("CSV_FILE", "products_template.csv")
 def ensure_schema():
     """
     Прогоняем models.sql — там должны быть:
-      - products(...)
+      - products(..., description TEXT)
       - orders(...), order_items(...)
       - settings(key TEXT PRIMARY KEY, value TEXT)
     """
@@ -30,39 +29,40 @@ def _as_int(v, default=0):
 
 def _norm_keys(d: dict) -> dict:
     """Приводим ключи CSV к нижнему регистру для стабильного доступа."""
-    return { (k or "").strip().lower(): (v or "") for k, v in d.items() }
+    return {(k or "").strip().lower(): (v or "") for k, v in d.items()}
 
 
-def _save_logo(cur, url: str):
-    """Сохраняем логотип в settings.logo_url (UPSERT)."""
-    url = (url or "").strip()
-    if not url:
+def _save_setting(cur, key: str, value: str) -> bool:
+    """Сохраняем ключ/значение в settings (UPSERT)."""
+    value = (value or "").strip()
+    if not value:
         return False
     cur.execute(
         """
         INSERT INTO settings(key, value)
-        VALUES('logo_url', ?)
+        VALUES(?, ?)
         ON CONFLICT(key) DO UPDATE SET value = excluded.value
         """,
-        (url,),
+        (key, value),
     )
     return True
 
 
 def _upsert_product(row: dict, cur):
     """
-    Обычная вставка товара.
-    Поддерживает поля:
-      title, category, subcategory, price, image_url, sizes_text|sizes, is_active
+    Вставка товара.
+    Поддерживает поля CSV (регистр не важен):
+      title, category, subcategory, price, image_url,
+      sizes_text|sizes, is_active, description
     """
     title = (row.get("title") or "").strip()
     if not title or title == "__LOGO__":
-        return False  # для __LOGO__ ничего в products не пишем
+        return False  # спец-строка для логотипа или пустой title — пропускаем
 
     cur.execute(
         """
-        INSERT INTO products(title, category, subcategory, price, image_url, sizes, is_active)
-        VALUES(?,?,?,?,?,?,?)
+        INSERT INTO products(title, category, subcategory, price, image_url, sizes, is_active, description)
+        VALUES(?,?,?,?,?,?,?,?)
         """,
         (
             title,
@@ -72,6 +72,7 @@ def _upsert_product(row: dict, cur):
             (row.get("image_url") or "").strip(),
             (row.get("sizes_text") or row.get("sizes") or "").replace(" ", ""),
             _as_int(row.get("is_active"), 1),
+            (row.get("description") or "").strip(),  # <-- описание
         ),
     )
     return True
@@ -91,7 +92,7 @@ def main(csv_path=None, clear=False):
         cur = conn.cursor()
 
         if clear:
-            # чистим только товары; настройки (включая логотип) НЕ трогаем
+            # Чистим только товары; настройки (включая логотип) не трогаем
             cur.execute("DELETE FROM products")
 
         with open(csv_path, newline="", encoding="utf-8") as f:
@@ -100,10 +101,10 @@ def main(csv_path=None, clear=False):
                 row = _norm_keys(raw)
 
                 # Спец-строка для логотипа:
-                #   title=__LOGO__, image_url=<url>   (или logo_url=<url>)
+                # title=__LOGO__, image_url=<url>   (или logo_url=<url>)
                 if (row.get("title") or "").strip().upper() == "__LOGO__":
                     url = row.get("logo_url") or row.get("image_url") or ""
-                    if _save_logo(cur, url):
+                    if _save_setting(cur, "logo_url", url):
                         logo_set = True
                     continue  # не пишем в products
 
