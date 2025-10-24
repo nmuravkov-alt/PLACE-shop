@@ -53,19 +53,19 @@ body {
 /* ====== ИЗОБРАЖЕНИЕ ТОВАРА (квадрат 1×1) ====== */
 .thumb {
   width: 100%;
-  aspect-ratio: 1 / 1;          /* Квадратный формат */
+  aspect-ratio: 1 / 1;
   overflow: hidden;
   border-radius: 12px;
   background: #f2f2f7;
   margin-bottom: 10px;
 }
-
 .thumb img {
   width: 100%;
   height: 100%;
-  object-fit: cover;             /* Заполняет квадрат, по центру */
+  object-fit: cover;
   display: block;
   background: #f2f2f7;
+  cursor: zoom-in;
 }
 
 /* ========== ФОРМЫ / КНОПКИ ========== */
@@ -132,6 +132,7 @@ select{
   .backdrop{background:rgba(0,0,0,.5);}
   .btn.ghost{background:#111;border-color:#2a2a2a;color:#79a9ff;}
 }
+
 /* ===== Hero (логотип на главной) ===== */
 .hero {
   margin-bottom: 16px;
@@ -142,7 +143,7 @@ select{
 }
 .hero .hero-img {
   width: 100%;
-  aspect-ratio: 1/1; /* квадрат — безопасно для логотипов; при желании поменяй */
+  aspect-ratio: 1/1;           /* квадрат под логотип */
   border-radius: 12px;
   overflow: hidden;
   background: #f2f2f7;
@@ -150,24 +151,36 @@ select{
 .hero .hero-img img {
   width: 100%;
   height: 100%;
-  object-fit: contain; /* не обрезаем логотип */
+  object-fit: contain;          /* логотип не обрезаем */
   display: block;
+  cursor: zoom-in;
 }
+
 /* ===== Просмотр фото в полноэкранном режиме ===== */
 #imgViewer {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.9);
+  background: rgba(0,0,0,0.92);
   display: flex;
   justify-content: center;
   align-items: center;
   z-index: 2000;
   cursor: zoom-out;
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+           max(16px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  animation: viewerFade .18s ease-out;
 }
 #imgViewer img {
   max-width: 95%;
   max-height: 95%;
   border-radius: 12px;
   object-fit: contain;
+  will-change: transform;
+  touch-action: none; /* помогает для pinch-zoom */
 }
-.hidden { display: none; }
+
+/* Плавное появление */
+@keyframes viewerFade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
