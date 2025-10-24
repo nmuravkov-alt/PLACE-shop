@@ -7,16 +7,21 @@
   <title>LAYOUTPLACE Shop</title>
 
   <!-- Стили с кэш-бастингом -->
-  <link rel="stylesheet" href="./style.css?v=6"/>
+  <link rel="stylesheet" href="./style.css?v=7"/>
 
   <!-- Telegram SDK -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-  <!-- Наш фронт (деферим, чтобы DOM уже был) -->
-  <script src="./app.js?v=6" defer></script>
+  <!-- Наш фронт -->
+  <script src="./app.js?v=7" defer></script>
 </head>
 <body>
-  <div id="imgViewer" class="hidden"><img src="" alt="preview"/></div>
+
+  <!-- ===== Полноэкранный просмотр фото ===== -->
+  <div id="imgViewer" class="hidden">
+    <img src="" alt="preview"/>
+  </div>
+
   <header class="topbar">
     <div>
       <div id="shopTitle" class="shop-title"></div>
@@ -27,13 +32,13 @@
     </button>
   </header>
 
-<main class="container">
-  <!-- Герой с логотипом (только на главной) -->
-  <div id="hero" class="hero hidden"></div>
+  <main class="container">
+    <!-- Герой с логотипом (только на главной) -->
+    <div id="hero" class="hero hidden"></div>
 
-  <div id="categories" class="cat-grid"></div>
-  <div id="products" class="products"></div>
-</main>
+    <div id="categories" class="cat-grid"></div>
+    <div id="products" class="products"></div>
+  </main>
 
   <footer class="bottom">
     <button id="writeBtn" class="btn ghost">Написать</button>
@@ -42,5 +47,67 @@
 
   <div id="sheet" class="sheet hidden"></div>
   <div id="backdrop" class="backdrop hidden"></div>
+
+  <script>
+    // === Просмотр фото (встроенная логика без правки app.js) ===
+    const viewer = document.getElementById("imgViewer");
+    const viewerImg = viewer.querySelector("img");
+    let startY = 0, scale = 1, startDist = 0;
+
+    function openViewer(src) {
+      if (!src) return;
+      viewerImg.src = src;
+      viewer.classList.remove("hidden");
+      document.body.style.overflow = "hidden";
+    }
+
+    function closeViewer() {
+      viewer.classList.add("hidden");
+      viewerImg.src = "";
+      document.body.style.overflow = "";
+      scale = 1;
+      viewerImg.style.transform = "scale(1)";
+    }
+
+    // свайп вниз для закрытия
+    viewer.addEventListener("touchstart", (e) => {
+      if (e.touches.length === 1) startY = e.touches[0].clientY;
+      if (e.touches.length === 2) {
+        const dx = e.touches[1].clientX - e.touches[0].clientX;
+        const dy = e.touches[1].clientY - e.touches[0].clientY;
+        startDist = Math.sqrt(dx*dx + dy*dy);
+      }
+    });
+
+    viewer.addEventListener("touchmove", (e) => {
+      if (e.touches.length === 1 && startY) {
+        const deltaY = e.touches[0].clientY - startY;
+        if (deltaY > 120) closeViewer();
+      }
+      if (e.touches.length === 2 && startDist) {
+        const dx = e.touches[1].clientX - e.touches[0].clientX;
+        const dy = e.touches[1].clientY - e.touches[0].clientY;
+        const newDist = Math.sqrt(dx*dx + dy*dy);
+        scale *= newDist / startDist;
+        startDist = newDist;
+        scale = Math.max(1, Math.min(scale, 4)); // ограничиваем зум
+        viewerImg.style.transform = `scale(${scale})`;
+      }
+    });
+
+    viewer.addEventListener("click", closeViewer);
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !viewer.classList.contains("hidden")) closeViewer();
+    });
+
+    // обработка всех картинок магазина (и товаров, и логотипа)
+    document.body.addEventListener("click", (e) => {
+      const img = e.target.closest(".thumb img, .hero-img img");
+      if (!img) return;
+      const src = img.getAttribute("src");
+      if (src) openViewer(src);
+    });
+  </script>
+
 </body>
 </html>
