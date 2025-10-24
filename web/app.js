@@ -339,9 +339,23 @@ cartBtn.onclick = () => openCart();
   updateCartBadge();
 })();
 
-// ========= Просмотр фото =========
+// ========= Просмотр фото (только для карточек товаров) =========
 const imgViewer = document.querySelector("#imgViewer");
 const imgViewerImg = imgViewer?.querySelector("img");
+
+productsEl.addEventListener("click", (e) => {
+  const img = e.target.closest(".thumb img");
+  if (!img) return;
+  const src = img.getAttribute("src");
+  if (!src) return;
+  imgViewerImg.src = src;
+  imgViewer.classList.add("show");     // показываем
+});
+
+imgViewer.addEventListener("click", () => {
+  imgViewer.classList.remove("show");  // скрываем
+  imgViewerImg.src = "";
+});
 
 // Делегирование клика по картинке товара
 if (productsEl && imgViewer && imgViewerImg) {
