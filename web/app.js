@@ -338,3 +338,20 @@ cartBtn.onclick = () => openCart();
 
   updateCartBadge();
 })();
+// ========= Просмотр фото =========
+const imgViewer = document.querySelector("#imgViewer");
+const imgViewerImg = imgViewer?.querySelector("img");
+
+productsEl.addEventListener("click", (e) => {
+  const img = e.target.closest(".thumb img");
+  if (!img) return;
+  const src = img.getAttribute("src");
+  if (!src) return;
+  imgViewerImg.src = src;
+  imgViewer.classList.remove("hidden");
+});
+
+imgViewer.addEventListener("click", () => {
+  imgViewer.classList.add("hidden");
+  imgViewerImg.src = "";
+});
