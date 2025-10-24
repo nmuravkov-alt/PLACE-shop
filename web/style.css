@@ -157,26 +157,32 @@ select{
 }
 
 /* ===== Просмотр фото в полноэкранном режиме ===== */
-#imgViewer {
+#imgViewer{
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.92);
-  display: flex;
+  background: rgba(0,0,0,0.9);
+  display: flex;                 /* оставляем flex */
   justify-content: center;
   align-items: center;
   z-index: 2000;
   cursor: zoom-out;
-  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
-           max(16px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
-  animation: viewerFade .18s ease-out;
+
+  /* по умолчанию СКРЫТО — без display:none, чтобы не конфликтовать */
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity .18s ease;
 }
-#imgViewer img {
+#imgViewer.show{                 /* показываем при клике */
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+#imgViewer img{
   max-width: 95%;
   max-height: 95%;
   border-radius: 12px;
   object-fit: contain;
-  will-change: transform;
-  touch-action: none; /* помогает для pinch-zoom */
 }
 
 /* Плавное появление */
