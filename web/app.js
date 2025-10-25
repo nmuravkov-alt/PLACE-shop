@@ -75,14 +75,13 @@ function normalizeImageUrl(urlRaw) {
   if (qIdx > -1) u = u.slice(0, qIdx);
   const m = u.match(/drive\.google\.com\/file\/d\/([^/]+)/i);
   if (m && m[1]) return `https://drive.google.com/uc?export=view&id=${m[1]}`;
-  u = u.replace(/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/refs\/heads\/main\//i,
-                "raw.githubusercontent.com/$1/$2/main/");
+  u = u.replace(
+    /raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/refs\/heads\/main\//i,
+    "raw.githubusercontent.com/$1/$2/main/"
+  );
   return u;
 }
-function normalizeVideoUrl(urlRaw){
-  // те же правила, что и для картинок
-  return normalizeImageUrl(urlRaw);
-}
+const normalizeVideoUrl = normalizeImageUrl; // те же правила, что и для картинок
 
 // ========= API =========
 async function getJSON(url){
@@ -112,8 +111,6 @@ async function loadProducts(category, sub=""){
 function renderHome(logoUrl, videoUrl){
   productsEl.innerHTML = "";
 
-  // если videoUrl не передали сюда — возьмём из уже загруженного cfg
-  // но ниже в init я вставил передачу второго аргумента
   const hasVideo = !!(videoUrl && String(videoUrl).trim());
   const hasImage = !!(logoUrl  && String(logoUrl).trim());
 
@@ -122,11 +119,13 @@ function renderHome(logoUrl, videoUrl){
     return;
   }
 
+  heroEl.innerHTML = ""; // очистка
+
   const box = document.createElement("div");
-  box.className = "hero-box";
+  box.className = "hero-img"; // используем готовые стили квадратного контейнера
 
   if (hasVideo) {
-    const src = normalizeImageUrl(videoUrl); // поддержит /images/... и GitHub raw
+    const src = normalizeVideoUrl(videoUrl);
     box.innerHTML = `
       <video
         src="${src}"
@@ -135,6 +134,7 @@ function renderHome(logoUrl, videoUrl){
         loop
         playsinline
         preload="auto"
+        style="width:100%;height:100%;object-fit:cover;border-radius:12px;"
         controlslist="nodownload noplaybackrate noremoteplayback nofullscreen">
       </video>
     `;
@@ -143,45 +143,26 @@ function renderHome(logoUrl, videoUrl){
     box.innerHTML = `
       <img src="${src}" alt="brand logo" loading="lazy" referrerpolicy="no-referrer" />
     `;
-    const img = box.querySelector("img");
-    if (img) img.onerror = () => { heroEl.classList.add("hidden"); };
   }
 
-  heroEl.innerHTML = "";
   heroEl.appendChild(box);
-  // подпись под медиа (оставь/измени по желанию)
+
+  // Подпись (можно убрать, если не нужна)
   const tagline = document.createElement("div");
-  tagline.className = "tagline";
+  tagline.className = "subtitle";
+  tagline.style.textAlign = "center";
+  tagline.style.marginTop = "8px";
   tagline.textContent = "Streetwear & Culture Store";
   heroEl.appendChild(tagline);
 
   heroEl.classList.remove("hidden");
-}
 
-    // iOS WebView иногда блокирует автоплей — пробуем вручную
-    const v = heroEl.querySelector("video");
-    if (v) {
-      v.addEventListener("error", () => { /* молча */ });
-      v.play().catch(() => {
-        // если заблокировано, показываем контролы, чтобы юзер ткнул
-        v.setAttribute("controls","controls");
-      });
-    }
-    return;
-  }
-
-  if (hasLogo) {
-    const imgSrc = normalizeImageUrl(logoUrl);
-    heroEl.innerHTML = `
-      <div class="hero-img">
-        <img src="${imgSrc}" alt="brand logo" loading="lazy" referrerpolicy="no-referrer"/>
-      </div>
-    `;
-    heroEl.classList.remove("hidden");
-    const img = heroEl.querySelector("img");
-    if (img) img.onerror = () => { heroEl.classList.add("hidden"); };
-  } else {
-    heroEl.classList.add("hidden");
+  // iOS WebView иногда блокирует автоплей — пробуем вручную
+  const v = heroEl.querySelector("video");
+  if (v) {
+    v.play().catch(() => {
+      v.setAttribute("controls","controls");
+    });
   }
 }
 
@@ -377,7 +358,6 @@ cartBtn.onclick = () => openCart();
   try {
     const cats = await loadCategories();
     renderCategories(cats);
-    // На главной остаёмся, пока пользователь не кликнет категорию.
   } catch {}
 
   updateCartBadge();
