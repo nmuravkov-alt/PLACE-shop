@@ -133,29 +133,62 @@ select{
   .btn.ghost{background:#111;border-color:#2a2a2a;color:#79a9ff;}
 }
 
-/* ===== Hero (видео или логотип на главной) ===== */
+/* ===== Hero (логотип / видео на главной) ===== */
 .hero {
   margin-bottom: 16px;
   border: 1px solid #e6e6e6;
   border-radius: 16px;
   background: #fff;
   padding: 12px;
+  overflow: hidden;                 /* ничего не вылезет */
 }
-.hero .hero-img,
-.hero .hero-video {
+
+/* Контейнер для видео/картинки */
+.hero .hero-box {
   width: 100%;
-  aspect-ratio: 1/1;        /* квадрат под медиа */
+  aspect-ratio: 1 / 1;              /* квадрат */
   border-radius: 12px;
   overflow: hidden;
-  background: #f2f2f7;
+  background: #000;                  /* фон для видео */
+  position: relative;
 }
-.hero .hero-img img,
-.hero .hero-video video {
+
+/* Видео */
+.hero .hero-box video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Картинка (fallback) */
+.hero .hero-box img {
   width: 100%;
   height: 100%;
   object-fit: contain;
   display: block;
-  border-radius: 12px;
+}
+
+/* Подпись под логотипом/видео */
+.hero .tagline {
+  text-align: center;
+  font-weight: 600;
+  margin: 10px 6px 0;
+  line-height: 1.25;
+  color: #111;
+}
+
+/* Полное скрытие встроенных контролов iOS/Safari */
+.hero video::-webkit-media-controls,
+.hero video::-webkit-media-controls-panel,
+.hero video::-webkit-media-controls-enclosure,
+.hero video::-webkit-media-controls-timeline,
+.hero video::-webkit-media-controls-play-button,
+.hero video::-webkit-media-controls-start-playback-button,
+.hero video::-webkit-media-controls-volume-slider {
+  display: none !important;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 /* ===== Просмотр фото в полноэкранном режиме ===== */
