@@ -21,7 +21,7 @@ def _parse_ids(s: str):
     out = []
     for part in (s or "").split(","):
         part = part.strip()
-        if not part: 
+        if not part:
             continue
         try:
             out.append(int(part))
@@ -67,10 +67,21 @@ async def file_handler(request):
         return web.Response(status=404, text="Not found")
     return web.FileResponse(p)
 
-# Конфиг для фронта: тайтл + логотип бренда (если есть)
+# Конфиг для фронта:
+#  title     — заголовок магазина
+#  hero_url  — видео/гиф/картинка для героя (главной)
+#  hero_type — "video" | "gif" | "image" (необяз., фронт умеет определить по расширению)
+#  logo_url  — оставляем для обратной совместимости (если hero_url пуст)
 async def api_config(request):
     logo_url = _get_setting("logo_url", None)
-    return web.json_response({"title": STORE_TITLE, "logo_url": logo_url})
+    hero_url = _get_setting("hero_url", None)
+    hero_type = _get_setting("hero_type", None)  # допустимо: video|gif|image
+    return web.json_response({
+        "title": STORE_TITLE,
+        "logo_url": logo_url,
+        "hero_url": hero_url or logo_url,  # fallback на логотип, если видео не задано
+        "hero_type": hero_type or "",
+    })
 
 async def api_categories(request):
     return web.json_response(get_categories())
@@ -134,7 +145,8 @@ async def img_proxy(request):
                 if resp.status != 200:
                     return web.Response(status=resp.status, text="fetch error")
                 data = await resp.read()
-                ctype = resp.headers.get("Content-Type", "image/jpeg")
+                # пробрасываем исходный тип (лучше, чем жёстко image/jpeg)
+                ctype = resp.headers.get("Content-Type", "application/octet-stream")
                 headers = {"Cache-Control":"public, max-age=31536000"}
                 return web.Response(body=data, content_type=ctype, headers=headers)
     except Exception as e:
@@ -148,15 +160,18 @@ def build_app():
     app.router.add_get("/web", index_handler)
     app.router.add_get("/web/{path:.*}", file_handler)
 
+    # Статика /images (для твоего hero mp4/webm или картинок)
     if op.isdir("images"):
         app.router.add_static("/images/", path="images", show_index=False)
 
+    # API
     app.router.add_get("/api/config", api_config)
     app.router.add_get("/api/categories", api_categories)
     app.router.add_get("/api/subcategories", api_subcategories)
     app.router.add_get("/api/products", api_products)
     app.router.add_post("/api/order", api_order)
 
+    # Прокси картинок (и прочего статики по URL)
     app.router.add_get("/img", img_proxy)
     return app
 
