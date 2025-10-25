@@ -15,7 +15,7 @@ const SHOES_SIZES   = ["36","37","38","39","40","41","42","43","44","45"];
 
 // ========= Состояние =========
 let state = {
-  category: null,   // null → главная с логотипом
+  category: null,   // null → главная (hero)
   cart: []          // [{key,id,title,price,size,qty}]
 };
 
@@ -67,13 +67,13 @@ function addToCart(p, size) {
 function money(n){ return (n||0).toLocaleString('ru-RU') + " ₽"; }
 
 /**
- * Нормализация ссылок на изображения.
+ * Нормализация ссылок на изображения/медиа.
  * Поддерживает:
  * - GitHub RAW (убираем refs/heads и query-токены)
  * - Google Drive: /file/d/<id>/view -> uc?export=view&id=<id>
  * - Локальные /images/... — как есть
  */
-function normalizeImageUrl(urlRaw) {
+function normalizeMediaUrl(urlRaw) {
   if (!urlRaw) return "";
   let u = String(urlRaw).trim();
 
@@ -95,6 +95,15 @@ function normalizeImageUrl(urlRaw) {
   return u;
 }
 
+function inferHeroType(url, explicitType=""){
+  const t = (explicitType||"").toLowerCase().trim();
+  if (t === "video" || t === "gif" || t === "image") return t;
+  const u = (url||"").toLowerCase();
+  if (u.endsWith(".mp4") || u.endsWith(".mov") || u.endsWith(".webm")) return "video";
+  if (u.endsWith(".gif")) return "gif";
+  return "image";
+}
+
 // ========= API =========
 async function getJSON(url){
   const r = await fetch(url, { credentials: "same-origin" });
@@ -102,10 +111,16 @@ async function getJSON(url){
   return r.json();
 }
 async function loadConfig(){
+  // bot.py /api/config возвращает: { title, logo_url, hero_url, hero_type }
   try {
-    return await getJSON(`${API}/api/config`);
+    const cfg = await getJSON(`${API}/api/config`);
+    return {
+      title: cfg?.title || "LAYOUTPLACE Shop",
+      hero_url: cfg?.hero_url || cfg?.logo_url || "",
+      hero_type: inferHeroType(cfg?.hero_url || cfg?.logo_url || "", cfg?.hero_type || ""),
+    };
   } catch {
-    return { title: "LAYOUTPLACE Shop", logo_url: "" };
+    return { title: "LAYOUTPLACE Shop", hero_url: "", hero_type: "" };
   }
 }
 async function loadCategories(){
@@ -120,24 +135,50 @@ async function loadProducts(category, sub=""){
 }
 
 // ========= Рендер =========
-function renderHome(logoUrl){
-  // Показать логотип, скрыть товары
+function renderHomeHero(heroUrl, heroType){
   productsEl.innerHTML = "";
-  const hasLogo = !!(logoUrl && String(logoUrl).trim());
-  if (hasLogo) {
-    const imgSrc = normalizeImageUrl(logoUrl);
+  const url = (heroUrl && String(heroUrl).trim()) ? normalizeMediaUrl(heroUrl) : "";
+  if (!url) { heroEl.classList.add("hidden"); return; }
+
+  // Варианты: video / gif / image
+  const kind = inferHeroType(url, heroType);
+
+  if (kind === "video") {
+    // Автоплей без звука для WebApp/Safari: muted + playsinline + loop
     heroEl.innerHTML = `
       <div class="hero-img">
-        <img src="${imgSrc}" alt="brand logo" loading="lazy" referrerpolicy="no-referrer"/>
+        <video
+          src="${url}"
+          autoplay
+          muted
+          playsinline
+          loop
+          preload="auto"
+          style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px;"
+        ></video>
       </div>
     `;
-    heroEl.classList.remove("hidden");
-    const img = heroEl.querySelector("img");
-    if (img) {
-      img.onerror = () => { heroEl.classList.add("hidden"); };
-    }
+  } else if (kind === "gif") {
+    heroEl.innerHTML = `
+      <div class="hero-img">
+        <img src="${url}" alt="brand hero" loading="lazy" referrerpolicy="no-referrer" style="object-fit:contain"/>
+      </div>
+    `;
   } else {
-    heroEl.classList.add("hidden");
+    // обычная картинка
+    heroEl.innerHTML = `
+      <div class="hero-img">
+        <img src="${url}" alt="brand logo" loading="lazy" referrerpolicy="no-referrer" style="object-fit:contain"/>
+      </div>
+    `;
+  }
+
+  heroEl.classList.remove("hidden");
+
+  // если картинка/видео не грузится — спрячем блок
+  const media = heroEl.querySelector("img,video");
+  if (media) {
+    media.onerror = () => { heroEl.classList.add("hidden"); };
   }
 }
 
@@ -150,7 +191,7 @@ function renderCategories(list){
     div.textContent = cat.title;
     div.onclick = () => {
       state.category = cat.title;
-      heroEl.classList.add("hidden"); // ушли с главной — прячем логотип
+      heroEl.classList.add("hidden"); // ушли с главной — прячем hero
       drawProducts();
     };
     frag.appendChild(div);
@@ -172,8 +213,8 @@ async function drawProducts(){
       sizes = CLOTHES_SIZES;
     }
 
-    const imgUrl = normalizeImageUrl(p.image_url || p.image || "");
-    const desc   = (p.description || "").trim(); // описание из API (БД)
+    const imgUrl = normalizeMediaUrl(p.image_url || p.image || "");
+    const desc   = (p.description || "").trim();
 
     const card = document.createElement("div");
     card.className = "card";
@@ -324,8 +365,8 @@ cartBtn.onclick = () => openCart();
         subtitleEl.textContent = "";
       }
     }
-    // Показать логотип на главной
-    renderHome(cfg?.logo_url || "");
+    // Показать HERO на главной (видео/гиф/картинка)
+    renderHomeHero(cfg?.hero_url || cfg?.logo_url || "", cfg?.hero_type || "");
   } catch (e) {
     heroEl?.classList?.add("hidden");
   }
@@ -343,21 +384,6 @@ cartBtn.onclick = () => openCart();
 const imgViewer = document.querySelector("#imgViewer");
 const imgViewerImg = imgViewer?.querySelector("img");
 
-productsEl.addEventListener("click", (e) => {
-  const img = e.target.closest(".thumb img");
-  if (!img) return;
-  const src = img.getAttribute("src");
-  if (!src) return;
-  imgViewerImg.src = src;
-  imgViewer.classList.add("show");     // показываем
-});
-
-imgViewer.addEventListener("click", () => {
-  imgViewer.classList.remove("show");  // скрываем
-  imgViewerImg.src = "";
-});
-
-// Делегирование клика по картинке товара
 if (productsEl && imgViewer && imgViewerImg) {
   productsEl.addEventListener("click", (e) => {
     const target = e.target;
