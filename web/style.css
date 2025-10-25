@@ -133,7 +133,7 @@ select{
   .btn.ghost{background:#111;border-color:#2a2a2a;color:#79a9ff;}
 }
 
-/* ===== Hero (логотип на главной) ===== */
+/* ===== Hero (видео или логотип на главной) ===== */
 .hero {
   margin-bottom: 16px;
   border: 1px solid #e6e6e6;
@@ -141,19 +141,21 @@ select{
   background: #fff;
   padding: 12px;
 }
-.hero .hero-img {
+.hero .hero-img,
+.hero .hero-video {
   width: 100%;
-  aspect-ratio: 1/1;           /* квадрат под логотип */
+  aspect-ratio: 1/1;        /* квадрат под медиа */
   border-radius: 12px;
   overflow: hidden;
   background: #f2f2f7;
 }
-.hero .hero-img img {
+.hero .hero-img img,
+.hero .hero-video video {
   width: 100%;
   height: 100%;
-  object-fit: contain;          /* логотип не обрезаем */
+  object-fit: contain;
   display: block;
-  cursor: zoom-in;
+  border-radius: 12px;
 }
 
 /* ===== Просмотр фото в полноэкранном режиме ===== */
@@ -161,19 +163,18 @@ select{
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.9);
-  display: flex;                 /* оставляем flex */
+  display: flex;
   justify-content: center;
   align-items: center;
   z-index: 2000;
   cursor: zoom-out;
 
-  /* по умолчанию СКРЫТО — без display:none, чтобы не конфликтовать */
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
   transition: opacity .18s ease;
 }
-#imgViewer.show{                 /* показываем при клике */
+#imgViewer.show{
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
