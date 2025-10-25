@@ -72,14 +72,14 @@ async def file_handler(request):
 #  hero_url  — видео/гиф/картинка для героя (главной)
 #  hero_type — "video" | "gif" | "image" (необяз., фронт умеет определить по расширению)
 #  logo_url  — оставляем для обратной совместимости (если hero_url пуст)
-async def api_config(request):
+sync def api_config(request):
     logo_url = _get_setting("logo_url", None)
     hero_url = _get_setting("hero_url", None)
-    hero_type = _get_setting("hero_type", None)  # допустимо: video|gif|image
+    hero_type = _get_setting("hero_type", None)
     return web.json_response({
         "title": STORE_TITLE,
         "logo_url": logo_url,
-        "hero_url": hero_url or logo_url,  # fallback на логотип, если видео не задано
+        "hero_url": hero_url or logo_url,
         "hero_type": hero_type or "",
     })
 
