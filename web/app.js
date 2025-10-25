@@ -112,24 +112,51 @@ async function loadProducts(category, sub=""){
 function renderHome(logoUrl, videoUrl){
   productsEl.innerHTML = "";
 
+  // если videoUrl не передали сюда — возьмём из уже загруженного cfg
+  // но ниже в init я вставил передачу второго аргумента
   const hasVideo = !!(videoUrl && String(videoUrl).trim());
-  const hasLogo  = !!(logoUrl && String(logoUrl).trim());
+  const hasImage = !!(logoUrl  && String(logoUrl).trim());
+
+  if (!hasVideo && !hasImage) {
+    heroEl.classList.add("hidden");
+    return;
+  }
+
+  const box = document.createElement("div");
+  box.className = "hero-box";
 
   if (hasVideo) {
-    const src = normalizeVideoUrl(videoUrl);
-    heroEl.innerHTML = `
-      <div class="hero-video">
-        <video
-          src="${src}"
-          autoplay
-          muted
-          playsinline
-          loop
-          preload="auto"
-        ></video>
-      </div>
+    const src = normalizeImageUrl(videoUrl); // поддержит /images/... и GitHub raw
+    box.innerHTML = `
+      <video
+        src="${src}"
+        autoplay
+        muted
+        loop
+        playsinline
+        preload="auto"
+        controlslist="nodownload noplaybackrate noremoteplayback nofullscreen">
+      </video>
     `;
-    heroEl.classList.remove("hidden");
+  } else {
+    const src = normalizeImageUrl(logoUrl);
+    box.innerHTML = `
+      <img src="${src}" alt="brand logo" loading="lazy" referrerpolicy="no-referrer" />
+    `;
+    const img = box.querySelector("img");
+    if (img) img.onerror = () => { heroEl.classList.add("hidden"); };
+  }
+
+  heroEl.innerHTML = "";
+  heroEl.appendChild(box);
+  // подпись под медиа (оставь/измени по желанию)
+  const tagline = document.createElement("div");
+  tagline.className = "tagline";
+  tagline.textContent = "Streetwear & Culture Store";
+  heroEl.appendChild(tagline);
+
+  heroEl.classList.remove("hidden");
+}
 
     // iOS WebView иногда блокирует автоплей — пробуем вручную
     const v = heroEl.querySelector("video");
