@@ -152,7 +152,7 @@ function renderHome(logoUrl, videoUrl){
   tagline.className = "subtitle";
   tagline.style.textAlign = "center";
   tagline.style.marginTop = "8px";
-  tagline.textContent = "Streetwear & Culture Store";
+  tagline.textContent = "https://t.me/akumastreetwear"; 
   heroEl.appendChild(tagline);
 
   heroEl.classList.remove("hidden");
