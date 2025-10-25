@@ -45,7 +45,7 @@ dp  = Dispatcher()
 
 # ---- helpers ----
 def _get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
-    """Читает settings.value по ключу; если таблицы/ключа нет — вернет default."""
+    """Читает settings.value по ключу; если таблицы/ключа нет — вернёт default."""
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cur = conn.execute("SELECT value FROM settings WHERE key=?", (key,))
@@ -68,19 +68,23 @@ async def file_handler(request):
     return web.FileResponse(p)
 
 # Конфиг для фронта:
-#  title     — заголовок магазина
-#  hero_url  — видео/гиф/картинка для героя (главной)
-#  hero_type — "video" | "gif" | "image" (необяз., фронт умеет определить по расширению)
-#  logo_url  — оставляем для обратной совместимости (если hero_url пуст)
-sync def api_config(request):
-    logo_url = _get_setting("logo_url", None)
-    hero_url = _get_setting("hero_url", None)
-    hero_type = _get_setting("hero_type", None)
+#  title       — заголовок магазина
+#  video_url   — URL видео для героя (если задан settings.hero_video_url)
+#  logo_url    — картинка-логотип (fallback)
+#  hero_url    — совместимое поле-синоним (на всякий случай)
+#  hero_type   — опционально, если хочешь использовать на фронте
+async def api_config(request):
+    logo_url   = _get_setting("logo_url", "")              # картинка-логотип (fallback)
+    video_url  = _get_setting("hero_video_url", "")        # видео для главной
+    hero_url   = video_url or logo_url                     # совместимое поле
+    hero_type  = "video" if video_url else ("image" if logo_url else "")
+
     return web.json_response({
         "title": STORE_TITLE,
         "logo_url": logo_url,
-        "hero_url": hero_url or logo_url,
-        "hero_type": hero_type or "",
+        "video_url": video_url,
+        "hero_url": hero_url,
+        "hero_type": hero_type,
     })
 
 async def api_categories(request):
@@ -160,7 +164,7 @@ def build_app():
     app.router.add_get("/web", index_handler)
     app.router.add_get("/web/{path:.*}", file_handler)
 
-    # Статика /images (для твоего hero mp4/webm или картинок)
+    # Статика /images (для hero mp4/webm или картинок)
     if op.isdir("images"):
         app.router.add_static("/images/", path="images", show_index=False)
 
@@ -171,7 +175,7 @@ def build_app():
     app.router.add_get("/api/products", api_products)
     app.router.add_post("/api/order", api_order)
 
-    # Прокси картинок (и прочего статики по URL)
+    # Прокси
     app.router.add_get("/img", img_proxy)
     return app
 
