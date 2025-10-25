@@ -15,7 +15,7 @@ const SHOES_SIZES   = ["36","37","38","39","40","41","42","43","44","45"];
 
 // ========= Состояние =========
 let state = {
-  category: null,   // null → главная (hero)
+  category: null,   // null → главная с медиа (видео/логотип)
   cart: []          // [{key,id,title,price,size,qty}]
 };
 
@@ -66,42 +66,22 @@ function addToCart(p, size) {
 }
 function money(n){ return (n||0).toLocaleString('ru-RU') + " ₽"; }
 
-/**
- * Нормализация ссылок на изображения/медиа.
- * Поддерживает:
- * - GitHub RAW (убираем refs/heads и query-токены)
- * - Google Drive: /file/d/<id>/view -> uc?export=view&id=<id>
- * - Локальные /images/... — как есть
- */
-function normalizeMediaUrl(urlRaw) {
+// --- нормализация ссылок ---
+function normalizeImageUrl(urlRaw) {
   if (!urlRaw) return "";
   let u = String(urlRaw).trim();
-
   if (u.startsWith("/images/")) return u; // локальные
-
   const qIdx = u.indexOf("?");
   if (qIdx > -1) u = u.slice(0, qIdx);
-
   const m = u.match(/drive\.google\.com\/file\/d\/([^/]+)/i);
-  if (m && m[1]) {
-    return `https://drive.google.com/uc?export=view&id=${m[1]}`;
-  }
-
-  u = u.replace(
-    /raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/refs\/heads\/main\//i,
-    "raw.githubusercontent.com/$1/$2/main/"
-  );
-
+  if (m && m[1]) return `https://drive.google.com/uc?export=view&id=${m[1]}`;
+  u = u.replace(/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/refs\/heads\/main\//i,
+                "raw.githubusercontent.com/$1/$2/main/");
   return u;
 }
-
-function inferHeroType(url, explicitType=""){
-  const t = (explicitType||"").toLowerCase().trim();
-  if (t === "video" || t === "gif" || t === "image") return t;
-  const u = (url||"").toLowerCase();
-  if (u.endsWith(".mp4") || u.endsWith(".mov") || u.endsWith(".webm")) return "video";
-  if (u.endsWith(".gif")) return "gif";
-  return "image";
+function normalizeVideoUrl(urlRaw){
+  // те же правила, что и для картинок
+  return normalizeImageUrl(urlRaw);
 }
 
 // ========= API =========
@@ -111,16 +91,10 @@ async function getJSON(url){
   return r.json();
 }
 async function loadConfig(){
-  // bot.py /api/config возвращает: { title, logo_url, hero_url, hero_type }
   try {
-    const cfg = await getJSON(`${API}/api/config`);
-    return {
-      title: cfg?.title || "LAYOUTPLACE Shop",
-      hero_url: cfg?.hero_url || cfg?.logo_url || "",
-      hero_type: inferHeroType(cfg?.hero_url || cfg?.logo_url || "", cfg?.hero_type || ""),
-    };
+    return await getJSON(`${API}/api/config`);
   } catch {
-    return { title: "LAYOUTPLACE Shop", hero_url: "", hero_type: "" };
+    return { title: "LAYOUTPLACE Shop", logo_url: "", video_url: "" };
   }
 }
 async function loadCategories(){
@@ -135,50 +109,52 @@ async function loadProducts(category, sub=""){
 }
 
 // ========= Рендер =========
-function renderHomeHero(heroUrl, heroType){
+function renderHome(logoUrl, videoUrl){
   productsEl.innerHTML = "";
-  const url = (heroUrl && String(heroUrl).trim()) ? normalizeMediaUrl(heroUrl) : "";
-  if (!url) { heroEl.classList.add("hidden"); return; }
 
-  // Варианты: video / gif / image
-  const kind = inferHeroType(url, heroType);
+  const hasVideo = !!(videoUrl && String(videoUrl).trim());
+  const hasLogo  = !!(logoUrl && String(logoUrl).trim());
 
-  if (kind === "video") {
-    // Автоплей без звука для WebApp/Safari: muted + playsinline + loop
+  if (hasVideo) {
+    const src = normalizeVideoUrl(videoUrl);
     heroEl.innerHTML = `
-      <div class="hero-img">
+      <div class="hero-video">
         <video
-          src="${url}"
+          src="${src}"
           autoplay
           muted
           playsinline
           loop
           preload="auto"
-          style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px;"
         ></video>
       </div>
     `;
-  } else if (kind === "gif") {
-    heroEl.innerHTML = `
-      <div class="hero-img">
-        <img src="${url}" alt="brand hero" loading="lazy" referrerpolicy="no-referrer" style="object-fit:contain"/>
-      </div>
-    `;
-  } else {
-    // обычная картинка
-    heroEl.innerHTML = `
-      <div class="hero-img">
-        <img src="${url}" alt="brand logo" loading="lazy" referrerpolicy="no-referrer" style="object-fit:contain"/>
-      </div>
-    `;
+    heroEl.classList.remove("hidden");
+
+    // iOS WebView иногда блокирует автоплей — пробуем вручную
+    const v = heroEl.querySelector("video");
+    if (v) {
+      v.addEventListener("error", () => { /* молча */ });
+      v.play().catch(() => {
+        // если заблокировано, показываем контролы, чтобы юзер ткнул
+        v.setAttribute("controls","controls");
+      });
+    }
+    return;
   }
 
-  heroEl.classList.remove("hidden");
-
-  // если картинка/видео не грузится — спрячем блок
-  const media = heroEl.querySelector("img,video");
-  if (media) {
-    media.onerror = () => { heroEl.classList.add("hidden"); };
+  if (hasLogo) {
+    const imgSrc = normalizeImageUrl(logoUrl);
+    heroEl.innerHTML = `
+      <div class="hero-img">
+        <img src="${imgSrc}" alt="brand logo" loading="lazy" referrerpolicy="no-referrer"/>
+      </div>
+    `;
+    heroEl.classList.remove("hidden");
+    const img = heroEl.querySelector("img");
+    if (img) img.onerror = () => { heroEl.classList.add("hidden"); };
+  } else {
+    heroEl.classList.add("hidden");
   }
 }
 
@@ -191,7 +167,7 @@ function renderCategories(list){
     div.textContent = cat.title;
     div.onclick = () => {
       state.category = cat.title;
-      heroEl.classList.add("hidden"); // ушли с главной — прячем hero
+      heroEl.classList.add("hidden"); // ушли с главной — прячем медиа
       drawProducts();
     };
     frag.appendChild(div);
@@ -213,7 +189,7 @@ async function drawProducts(){
       sizes = CLOTHES_SIZES;
     }
 
-    const imgUrl = normalizeMediaUrl(p.image_url || p.image || "");
+    const imgUrl = normalizeImageUrl(p.image_url || p.image || "");
     const desc   = (p.description || "").trim();
 
     const card = document.createElement("div");
@@ -365,8 +341,8 @@ cartBtn.onclick = () => openCart();
         subtitleEl.textContent = "";
       }
     }
-    // Показать HERO на главной (видео/гиф/картинка)
-    renderHomeHero(cfg?.hero_url || cfg?.logo_url || "", cfg?.hero_type || "");
+    // Показать видео (если есть) или логотип
+    renderHome(cfg?.logo_url || "", cfg?.video_url || "");
   } catch (e) {
     heroEl?.classList?.add("hidden");
   }
@@ -380,7 +356,7 @@ cartBtn.onclick = () => openCart();
   updateCartBadge();
 })();
 
-// ========= Просмотр фото (только для карточек товаров) =========
+// ========= Просмотр фото (карточки товаров) =========
 const imgViewer = document.querySelector("#imgViewer");
 const imgViewerImg = imgViewer?.querySelector("img");
 
@@ -392,11 +368,11 @@ if (productsEl && imgViewer && imgViewerImg) {
     const src = img.getAttribute("src");
     if (!src) return;
     imgViewerImg.src = src;
-    imgViewer.classList.remove("hidden");
+    imgViewer.classList.add("show");
   });
 
   imgViewer.addEventListener("click", () => {
-    imgViewer.classList.add("hidden");
+    imgViewer.classList.remove("show");
     imgViewerImg.src = "";
   });
 }
