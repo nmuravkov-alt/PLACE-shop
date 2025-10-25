@@ -1,128 +1,80 @@
-import csv, sqlite3, os
-from pathlib import Path
+import csv, sqlite3, sys, os
 
-# --- Настройки ---
-DB_PATH  = os.getenv("DB_PATH", "data.sqlite")
-# Можно задать CSV через ENV: CSV_FILE=products_akuma.csv
-CSV_FILE = os.getenv("CSV_FILE", "products_template.csv")
+DB_PATH = "data.sqlite"
+CSV_PATH = "data.csv"
 
+def ensure_db():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
 
-# --- Вспомогательные ---
-def ensure_schema():
-    """
-    Прогоняем models.sql — там должны быть:
-      - products(..., description TEXT)
-      - orders(...), order_items(...)
-      - settings(key TEXT PRIMARY KEY, value TEXT)
-    """
-    sql = Path("models.sql").read_text(encoding="utf-8")
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.executescript(sql)
-
-
-def _as_int(v, default=0):
-    try:
-        return int(str(v).strip())
-    except Exception:
-        return default
-
-
-def _norm_keys(d: dict) -> dict:
-    """Приводим ключи CSV к нижнему регистру для стабильного доступа."""
-    return {(k or "").strip().lower(): (v or "") for k, v in d.items()}
-
-
-def _save_setting(cur, key: str, value: str) -> bool:
-    """Сохраняем ключ/значение в settings (UPSERT)."""
-    value = (value or "").strip()
-    if not value:
-        return False
-    cur.execute(
-        """
-        INSERT INTO settings(key, value)
-        VALUES(?, ?)
-        ON CONFLICT(key) DO UPDATE SET value = excluded.value
-        """,
-        (key, value),
+    # Основные таблицы
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
     )
-    return True
-
-
-def _upsert_product(row: dict, cur):
-    """
-    Вставка товара.
-    Поддерживает поля CSV (регистр не важен):
-      title, category, subcategory, price, image_url,
-      sizes_text|sizes, is_active, description
-    """
-    title = (row.get("title") or "").strip()
-    if not title or title == "__LOGO__":
-        return False  # спец-строка для логотипа или пустой title — пропускаем
-
-    cur.execute(
-        """
-        INSERT INTO products(title, category, subcategory, price, image_url, sizes, is_active, description)
-        VALUES(?,?,?,?,?,?,?,?)
-        """,
-        (
-            title,
-            (row.get("category") or "").strip(),
-            (row.get("subcategory") or "").strip(),
-            _as_int(row.get("price"), 0),
-            (row.get("image_url") or "").strip(),
-            (row.get("sizes_text") or row.get("sizes") or "").replace(" ", ""),
-            _as_int(row.get("is_active"), 1),
-            (row.get("description") or "").strip(),  # <-- описание
-        ),
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT,
+        category TEXT,
+        subcategory TEXT,
+        price INTEGER,
+        image_url TEXT,
+        sizes_text TEXT,
+        is_active INTEGER DEFAULT 1,
+        description TEXT
     )
-    return True
+    """)
+    conn.commit()
+    conn.close()
 
 
-# --- Основная логика ---
-def main(csv_path=None, clear=False):
-    ensure_schema()
-    csv_path = csv_path or CSV_FILE
-    if not Path(csv_path).is_file():
-        raise FileNotFoundError(f"CSV file not found: {csv_path}")
+def seed_from_csv(path=CSV_PATH):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM products")
 
-    inserted = 0
-    logo_set = False
+    with open(path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            title = (row.get("title") or "").strip()
+            if not title:
+                continue
 
-    with sqlite3.connect(DB_PATH) as conn:
-        cur = conn.cursor()
+            # ==== hero/video logo ====
+            if title in ["__VIDEO__", "__HERO__"]:
+                video_url = (row.get("image_url") or "").strip()
+                if video_url:
+                    print(f"⚙️  Установлен hero_video_url = {video_url}")
+                    cur.execute("""
+                        INSERT INTO settings(key, value)
+                        VALUES('hero_video_url', ?)
+                        ON CONFLICT(key) DO UPDATE SET value=excluded.value
+                    """, (video_url,))
+                continue
 
-        if clear:
-            # Чистим только товары; настройки (включая логотип) не трогаем
-            cur.execute("DELETE FROM products")
+            # ==== обычные товары ====
+            cur.execute("""
+                INSERT INTO products(title, category, subcategory, price, image_url, sizes_text, is_active, description)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                title,
+                (row.get("category") or "").strip(),
+                (row.get("subcategory") or "").strip(),
+                int(float(row.get("price") or 0)),
+                (row.get("image_url") or "").strip(),
+                (row.get("sizes") or "").strip(),
+                int(row.get("is_active") or 1),
+                (row.get("description") or "").strip(),
+            ))
 
-        with open(csv_path, newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for raw in reader:
-                row = _norm_keys(raw)
-
-                # Спец-строка для логотипа:
-                # title=__LOGO__, image_url=<url>   (или logo_url=<url>)
-                if (row.get("title") or "").strip().upper() == "__LOGO__":
-                    url = row.get("logo_url") or row.get("image_url") or ""
-                    if _save_setting(cur, "logo_url", url):
-                        logo_set = True
-                    continue  # не пишем в products
-
-                if _upsert_product(row, cur):
-                    inserted += 1
-
-        conn.commit()
-
-    msg = f"✅ Imported {inserted} products from {csv_path} into {DB_PATH}"
-    if logo_set:
-        msg += " (logo_url saved)"
-    print(msg)
+    conn.commit()
+    conn.close()
+    print("✅ Импорт завершён.")
 
 
 if __name__ == "__main__":
-    import argparse
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--csv", required=False, help="Path to CSV file (optional if CSV_FILE env is set)")
-    ap.add_argument("--clear", action="store_true", help="Delete all products before import")
-    args = ap.parse_args()
-    main(args.csv, args.clear)
+    ensure_db()
+    seed_from_csv(sys.argv[1] if len(sys.argv) > 1 else CSV_PATH)
