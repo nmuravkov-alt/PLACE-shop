@@ -1,385 +1,498 @@
-// ===== Telegram WebApp boot =====
-const tg = window.Telegram?.WebApp;
-tg?.ready();
+document.addEventListener("DOMContentLoaded", () => {
+  initApp();
+});
 
-// ========= Константы проекта =========
-const MANAGER_USERNAME = "layoutplacebuy";   // @ без @
-const MANAGER_ID       = 6773668793;         // резерв по id
+function initApp() {
+  // ===== Telegram WebApp boot =====
+  const tg = window.Telegram?.WebApp;
+  tg?.ready?.();
+  tg?.expand?.();
 
-// Относительный API (бот и статика на одном домене)
-const API = "";
+  const MANAGER_USERNAME = "layoutplacebuy";
+  const MANAGER_ID = 6773668793;
+  const API = "";
 
-// Размеры по умолчанию
-const CLOTHES_SIZES = ["XS","S","M","L","XL","XXL"];
-const SHOES_SIZES   = ["36","37","38","39","40","41","42","43","44","45"];
+  const CLOTHES_SIZES = ["XS","S","M","L","XL","XXL"];
+  const SHOES_SIZES   = ["36","37","38","39","40","41","42","43","44","45"];
 
-// ========= Состояние =========
-let state = {
-  category: null,   // null → главная с медиа (видео/логотип)
-  cart: []          // [{key,id,title,price,size,qty}]
-};
+  let state = { category: null, cart: [] };
 
-// ========= DOM =========
-const $ = (sel) => document.querySelector(sel);
-const heroEl       = $("#hero");
-const categoriesEl = $("#categories");
-const productsEl   = $("#products");
-const cartBtn      = $("#cartBtn");
-const cartCount    = $("#cartCount");
-const writeBtn     = $("#writeBtn");
-const checkoutBtn  = $("#checkoutBtn");
-const sheet        = $("#sheet");
-const backdrop     = $("#backdrop");
-const titleEl      = $("#shopTitle");
-const subtitleEl   = $("#subtitle");
+  const $ = (s) => document.querySelector(s);
+  const heroEl = $("#hero");
+  const categoriesEl = $("#categories");
+  const productsEl = $("#products");
+  const cartBtn = $("#cartBtn");
+  const cartCount = $("#cartCount");
+  const writeBtn = $("#writeBtn");
+  const checkoutBtn = $("#checkoutBtn");
+  const sheet = $("#sheet");
+  const backdrop = $("#backdrop");
+  const titleEl = $("#shopTitle");
+  const subtitleEl = $("#subtitle");
 
-// ========= Утилиты =========
-function esc(s){
-  return String(s ?? "")
-    .replace(/&/g,"&amp;")
-    .replace(/</g,"&lt;")
-    .replace(/>/g,"&gt;")
-    .replace(/"/g,"&quot;")
-    .replace(/'/g,"&#39;");
-}
-function openSheet(html) {
-  sheet.innerHTML = html;
-  sheet.classList.remove("hidden");
-  backdrop.classList.remove("hidden");
-  backdrop.onclick = closeSheet;
-}
-function closeSheet() {
-  sheet.classList.add("hidden");
-  backdrop.classList.add("hidden");
-  sheet.innerHTML = "";
-}
-function updateCartBadge() {
-  const n = state.cart.reduce((s,i)=>s+i.qty,0);
-  cartCount.textContent = n;
-}
-function addToCart(p, size) {
-  const key = `${p.id}:${size||""}`;
-  const f = state.cart.find(it => it.key === key);
-  if (f) f.qty += 1;
-  else state.cart.push({ key, id:p.id, title:p.title, price:p.price, size:size||"", qty:1 });
-  updateCartBadge();
-}
-function money(n){ return (n||0).toLocaleString('ru-RU') + " ₽"; }
+  // ===== utils =====
+  const esc = s => String(s ?? "").replace(/[&<>"']/g,m=>({
+    "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
+  }[m]));
 
-// --- нормализация ссылок ---
-function normalizeImageUrl(urlRaw) {
-  if (!urlRaw) return "";
-  let u = String(urlRaw).trim();
-  if (u.startsWith("/images/")) return u; // локальные
-  const qIdx = u.indexOf("?");
-  if (qIdx > -1) u = u.slice(0, qIdx);
-  const m = u.match(/drive\.google\.com\/file\/d\/([^/]+)/i);
-  if (m && m[1]) return `https://drive.google.com/uc?export=view&id=${m[1]}`;
-  u = u.replace(
-    /raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/refs\/heads\/main\//i,
-    "raw.githubusercontent.com/$1/$2/main/"
-  );
-  return u;
-}
-const normalizeVideoUrl = normalizeImageUrl; // те же правила, что и для картинок
+  const money = n => (n||0).toLocaleString("ru-RU")+" ₽";
 
-// ========= API =========
-async function getJSON(url){
-  const r = await fetch(url, { credentials: "same-origin" });
-  if(!r.ok) throw new Error("HTTP "+r.status);
-  return r.json();
-}
-async function loadConfig(){
-  try {
-    return await getJSON(`${API}/api/config`);
-  } catch {
-    return { title: "LAYOUTPLACE Shop", logo_url: "", video_url: "" };
-  }
-}
-async function loadCategories(){
-  const data = await getJSON(`${API}/api/categories`);
-  return (data||[]).map(c => (typeof c==="string") ? {title:c} : {title:c.title, image_url:c.image_url||""});
-}
-async function loadProducts(category, sub=""){
-  const u = new URL(`${API}/api/products`, window.location.origin);
-  if (category)    u.searchParams.set("category", category);
-  if (sub != null) u.searchParams.set("subcategory", sub);
-  return getJSON(u.toString());
-}
-
-// ========= Рендер =========
-function renderHome(logoUrl, videoUrl){
-  productsEl.innerHTML = "";
-
-  const hasVideo = !!(videoUrl && String(videoUrl).trim());
-  const hasImage = !!(logoUrl  && String(logoUrl).trim());
-
-  if (!hasVideo && !hasImage) {
-    heroEl.classList.add("hidden");
-    return;
+  function updateCartBadge() {
+    if (!cartCount) return;
+    cartCount.textContent = state.cart.reduce((s,i)=>s+i.qty,0);
   }
 
-  heroEl.innerHTML = ""; // очистка
+  // ✅ FIX: Telegram iOS "кнопки не нажимаются" -> pointerup + click
+  function bindTap(el, fn) {
+    if (!el) return;
 
-  const box = document.createElement("div");
-  box.className = "hero-img"; // используем готовые стили квадратного контейнера
+    // iOS/Telegram может стрелять и pointerup и click -> анти-дабл
+    let last = 0;
 
-  if (hasVideo) {
-    const src = normalizeVideoUrl(videoUrl);
-    box.innerHTML = `
-      <video
-        src="${src}"
-        autoplay
-        muted
-        loop
-        playsinline
-        preload="auto"
-        style="width:100%;height:100%;object-fit:cover;border-radius:12px;"
-        controlslist="nodownload noplaybackrate noremoteplayback nofullscreen">
-      </video>
-    `;
-  } else {
-    const src = normalizeImageUrl(logoUrl);
-    box.innerHTML = `
-      <img src="${src}" alt="brand logo" loading="lazy" referrerpolicy="no-referrer" />
-    `;
+    const handler = (e) => {
+      const now = Date.now();
+      if (now - last < 350) return;
+      last = now;
+
+      try { e.preventDefault?.(); } catch {}
+      try { e.stopPropagation?.(); } catch {}
+      fn(e);
+    };
+
+    el.addEventListener("pointerup", handler, { passive: false });
+    el.addEventListener("click", handler, { passive: false });
+
+    el.style.touchAction = "manipulation";
+    el.style.webkitTapHighlightColor = "transparent";
   }
 
-  heroEl.appendChild(box);
+  // ✅ Нормализация ссылок (Drive/GitHub/jsDelivr/локальные)
+  function normalizeImageUrl(u){
+    if(!u) return "";
+    u = String(u).trim();
 
-  // Подпись (можно убрать, если не нужна)
-  const tagline = document.createElement("div");
-  tagline.className = "subtitle";
-  tagline.style.textAlign = "center";
-  tagline.style.marginTop = "8px";
-  tagline.textContent = "https://t.me/akumastreetwear"; 
-  heroEl.appendChild(tagline);
+    if (u.startsWith("/images/")) return u;
 
-  heroEl.classList.remove("hidden");
+    const m = u.match(/drive\.google\.com\/file\/d\/([^/]+)/i);
+    if(m) return `https://drive.google.com/uc?export=view&id=${m[1]}`;
 
-  // iOS WebView иногда блокирует автоплей — пробуем вручную
-  const v = heroEl.querySelector("video");
-  if (v) {
-    v.play().catch(() => {
-      v.setAttribute("controls","controls");
+    u = u.replace(
+      /raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/refs\/heads\/main\//i,
+      "raw.githubusercontent.com/$1/$2/main/"
+    );
+
+    const q = u.indexOf("?");
+    if(q > -1) u = u.slice(0,q);
+
+    return u;
+  }
+
+  function normalizeVideoUrl(u){
+    if(!u) return "";
+    u = String(u).trim();
+    if (u.startsWith("/images/")) return u;
+
+    const m = u.match(/drive\.google\.com\/file\/d\/([^/]+)/i);
+    if(m) return `https://drive.google.com/uc?export=view&id=${m[1]}`;
+
+    u = u.replace(
+      /raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/refs\/heads\/main\//i,
+      "raw.githubusercontent.com/$1/$2/main/"
+    );
+
+    return u;
+  }
+
+  // ===== API =====
+  const getJSON = (url) =>
+    fetch(url, { credentials: "same-origin" }).then(r => {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    });
+
+  const loadConfig = async () => {
+    try { return await getJSON(`${API}/api/config`); }
+    catch { return { title: "LAYOUTPLACE Shop", logo_url: "", video_url: "" }; }
+  };
+
+  const loadCategories = () => getJSON(`${API}/api/categories`);
+
+  const loadProducts = (c) => {
+    const u = new URL(`${API}/api/products`, location.origin);
+    if (c) u.searchParams.set("category", c);
+    return getJSON(u.toString());
+  };
+
+  // ===== Sheet helpers (корзина/оформление) =====
+  function openSheet(html) {
+    if (sheet) sheet.innerHTML = html;
+    sheet?.classList?.remove("hidden");
+    backdrop?.classList?.remove("hidden");
+    if (backdrop) backdrop.onclick = closeSheet;
+  }
+
+  function closeSheet() {
+    sheet?.classList?.add("hidden");
+    backdrop?.classList?.add("hidden");
+    if (sheet) sheet.innerHTML = "";
+  }
+
+  // ===== Корзина =====
+  function openCart(){
+    if (!state.cart.length){
+      openSheet(`<div class="row"><b>Корзина пуста</b></div>`);
+      return;
+    }
+
+    const rows = state.cart.map((it,idx)=>`
+      <div class="row">
+        <div>
+          <div><b>${esc(it.title)}</b> ${it.size ? `[${esc(it.size)}]` : ""}</div>
+          <div>${money(it.price)} × ${it.qty}</div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button data-a="minus" data-i="${idx}">–</button>
+          <button data-a="plus"  data-i="${idx}">+</button>
+          <button data-a="rm"    data-i="${idx}">✕</button>
+        </div>
+      </div>
+    `).join("");
+
+    const total = state.cart.reduce((s,i)=>s+i.price*i.qty,0);
+
+    openSheet(`
+      <h3>Корзина</h3>
+      ${rows}
+      <div class="row"><b>Итого:</b><b>${money(total)}</b></div>
+      <button id="toCheckout" class="btn primary">Оформить</button>
+    `);
+
+    // ⚠️ важно: обработчик на sheet, а не document
+    sheet.onclick = (e)=>{
+      const a = e.target?.dataset?.a;
+      if(!a) return;
+      const i = Number(e.target.dataset.i);
+      if (Number.isNaN(i) || !state.cart[i]) return;
+
+      if(a==="plus")  state.cart[i].qty++;
+      if(a==="minus") state.cart[i].qty = Math.max(1, state.cart[i].qty-1);
+      if(a==="rm")    state.cart.splice(i,1);
+
+      updateCartBadge();
+      closeSheet(); openCart();
+    };
+
+    const toCheckout = $("#toCheckout");
+    if (toCheckout) toCheckout.onclick = () => { closeSheet(); openCheckout(); };
+  }
+
+  // ===== Оформление =====
+  function openCheckout(){
+    const total = state.cart.reduce((s,i)=>s+i.price*i.qty,0);
+
+    openSheet(`
+      <h3>Оформление</h3>
+      <div class="row"><label>ФИО</label><input id="fio" placeholder="Иванов Иван"/></div>
+      <div class="row"><label>Телефон (+7XXXXXXXXXX)</label><input id="phone" inputmode="tel" placeholder="+7XXXXXXXXXX"/></div>
+      <div class="row"><label>Адрес/СДЭК</label><textarea id="addr" rows="2" placeholder="Город, пункт выдачи..."></textarea></div>
+      <div class="row"><label>Комментарий</label><textarea id="comment" rows="2" placeholder="Например: размер L, цвет черный"></textarea></div>
+      <div class="row"><label>Telegram (для связи)</label><input id="tguser" placeholder="@username"/></div>
+      <div class="row"><b>Сумма:</b><b>${money(total)}</b></div>
+      <button id="submitOrder" class="btn primary">Отправить</button>
+    `);
+
+    const submit = $("#submitOrder");
+    if (!submit) return;
+
+    submit.onclick = async () => {
+      const fio   = $("#fio");
+      const phone = $("#phone");
+      const addr  = $("#addr");
+      const comm  = $("#comment");
+      const tguser= $("#tguser");
+
+      const okPhone = /^\+7\d{10}$/.test((phone?.value || "").trim());
+      [fio, phone].forEach(el=>el?.classList?.remove("bad"));
+
+      if (!fio?.value?.trim()) { fio?.classList?.add("bad"); return; }
+      if (!okPhone)            { phone?.classList?.add("bad"); return; }
+
+      const payload = {
+        full_name: fio.value.trim(),
+        phone: phone.value.trim(),
+        address: (addr?.value || "").trim(),
+        comment: (comm?.value || "").trim(),
+        telegram: (tguser?.value || "").trim(),
+        items: state.cart.map(it=>({ product_id: it.id, size: it.size, qty: it.qty }))
+      };
+
+      try { tg?.sendData?.(JSON.stringify(payload)); } catch {}
+      try {
+        await fetch(`${API}/api/order`, {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify(payload)
+        });
+      } catch {}
+
+      tg?.HapticFeedback?.notificationOccurred?.("success");
+      closeSheet();
+    };
+  }
+
+  // ===== render home (видео/лого) =====
+  function renderHome(logoUrl, videoUrl) {
+    if (!heroEl) return;
+
+    const hasVideo = !!(videoUrl && String(videoUrl).trim());
+    const hasLogo  = !!(logoUrl  && String(logoUrl).trim());
+
+    if (!hasVideo && !hasLogo) {
+      heroEl.classList.add("hidden");
+      return;
+    }
+
+    heroEl.innerHTML = "";
+
+    const box = document.createElement("div");
+    box.className = "hero-img";
+
+    if (hasVideo) {
+      const src = normalizeVideoUrl(videoUrl);
+      const poster = hasLogo ? normalizeImageUrl(logoUrl) : "";
+
+      box.innerHTML = `
+        <video
+          src="${src}"
+          ${poster ? `poster="${poster}"` : ""}
+          muted
+          loop
+          playsinline
+          preload="metadata"
+          style="width:100%;height:100%;object-fit:cover;border-radius:12px;"
+          controlslist="nodownload noplaybackrate noremoteplayback nofullscreen">
+        </video>
+      `;
+    } else {
+      const src = normalizeImageUrl(logoUrl);
+      box.innerHTML = `
+        <img src="${src}" alt="brand logo" loading="lazy" referrerpolicy="no-referrer" />
+      `;
+    }
+
+    heroEl.appendChild(box);
+
+    const tagline = document.createElement("div");
+    tagline.className = "subtitle";
+    tagline.style.textAlign = "center";
+    tagline.style.marginTop = "8px";
+    tagline.textContent = "https://t.me/muraplace";
+    heroEl.appendChild(tagline);
+
+    heroEl.classList.remove("hidden");
+
+    const v = heroEl.querySelector("video");
+    if (v) v.play().catch(() => {});
+  }
+
+  function renderCategories(list){
+    if (!categoriesEl) return;
+    categoriesEl.innerHTML = "";
+    list.forEach(c=>{
+      const d = document.createElement("div");
+      d.className = "cat";
+      d.textContent = c.title || c;
+
+      d.onclick = () => {
+        state.category = d.textContent;
+        heroEl?.classList?.add("hidden");
+        drawProducts();
+      };
+
+      categoriesEl.appendChild(d);
     });
   }
-}
 
-function renderCategories(list){
-  categoriesEl.innerHTML = "";
-  const frag = document.createDocumentFragment();
-  list.forEach(cat=>{
-    const div = document.createElement("div");
-    div.className = "cat";
-    div.textContent = cat.title;
-    div.onclick = () => {
-      state.category = cat.title;
-      heroEl.classList.add("hidden"); // ушли с главной — прячем медиа
-      drawProducts();
-    };
-    frag.appendChild(div);
-  });
-  categoriesEl.appendChild(frag);
-}
-
-async function drawProducts(){
-  productsEl.innerHTML = "";
-  const items = await loadProducts(state.category || "");
-  items.forEach(p=>{
-    // размеры
-    let sizes = [];
-    if (p.sizes_text && String(p.sizes_text).trim()) {
-      sizes = String(p.sizes_text).split(",").map(s=>s.trim()).filter(Boolean);
-    } else if ((p.category||"").toLowerCase().includes("обув")) {
-      sizes = SHOES_SIZES;
-    } else {
-      sizes = CLOTHES_SIZES;
+  function buildAlbum(p){
+    const cover = normalizeImageUrl(p.image_url || p.image || "");
+    let list = [];
+    if (p.images_urls && String(p.images_urls).trim()) {
+      list = String(p.images_urls)
+        .split("|")
+        .map(s => normalizeImageUrl(s))
+        .filter(Boolean);
     }
+    const album = [];
+    if (cover) album.push(cover);
+    for (const u of list) if (u && !album.includes(u)) album.push(u);
+    return album;
+  }
 
-    const imgUrl = normalizeImageUrl(p.image_url || p.image || "");
-    const desc   = (p.description || "").trim();
+  async function drawProducts(){
+    if (!productsEl) return;
+    productsEl.innerHTML = "";
+    const items = await loadProducts(state.category || "");
 
-    const card = document.createElement("div");
-    card.className = "card";
-    card.innerHTML = `
-      ${imgUrl ? `
+    items.forEach(p=>{
+      let sizes=[];
+      if(p.sizes_text) sizes = String(p.sizes_text).split(",").map(s=>s.trim()).filter(Boolean);
+      else if((p.category||"").toLowerCase().includes("обув")) sizes = SHOES_SIZES;
+      else sizes = CLOTHES_SIZES;
+
+      const desc = (p.description || "").trim();
+
+      const album = buildAlbum(p);
+      const hasGallery = album.length > 0;
+
+      const galleryHtml = hasGallery ? `
         <div class="thumb">
-          <img src="${imgUrl}" alt="${esc(p.title)}" loading="lazy" referrerpolicy="no-referrer" />
-        </div>` : ``}
-      <div class="title">${esc(p.title)}</div>
-      <div class="price">${money(p.price)}</div>
-      ${desc ? `<div class="desc">${esc(desc)}</div>` : ``}
-      <div class="size-row">
+          <div class="gallery" data-images-count="${album.length}">
+            <div class="gallery-track" style="transform: translateX(0);">
+              ${album.map((src)=>`
+                <div class="gallery-slide">
+                  <img
+                    src="${src}"
+                    alt="${esc(p.title)}"
+                    loading="lazy"
+                    referrerpolicy="no-referrer"
+                    data-album="${esc(album.join("|"))}"
+                  />
+                </div>
+              `).join("")}
+            </div>
+
+            ${album.length > 1 ? `
+              <div class="gallery-dots">
+                ${album.map((_,i)=>`<span class="gallery-dot ${i===0?'active':''}"></span>`).join("")}
+              </div>
+            ` : ``}
+          </div>
+        </div>
+      ` : ``;
+
+      const card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML = `
+        ${galleryHtml}
+
+        <div class="title">${esc(p.title)}</div>
+        <div class="price">${money(p.price)}</div>
+        ${desc ? `<div class="desc">${esc(desc)}</div>` : ``}
+
         <select id="size-${p.id}">
-          ${sizes.map(s=>`<option value="${s}">${s}</option>`).join("")}
+          ${sizes.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join("")}
         </select>
-      </div>
-      <div style="margin-top:10px">
+
         <button class="btn primary" id="btn-${p.id}">В корзину</button>
-      </div>
-    `;
-    productsEl.appendChild(card);
+      `;
+      productsEl.appendChild(card);
 
-    const img = card.querySelector("img");
-    if (img) {
-      img.onerror = () => {
-        const th = img.closest(".thumb");
-        if (th) th.style.display = "none";
-      };
-    }
+      const gallery = card.querySelector(".gallery");
+      if (gallery) {
+        const track = gallery.querySelector(".gallery-track");
+        const dotsWrap = gallery.querySelector(".gallery-dots");
+        const dots = dotsWrap ? Array.from(dotsWrap.querySelectorAll(".gallery-dot")) : [];
+        const count = Number(gallery.dataset.imagesCount || 0);
 
-    $("#btn-"+p.id).onclick = () => {
-      const sz = $("#size-"+p.id).value;
-      addToCart(p, sz);
-      tg?.HapticFeedback?.impactOccurred?.("medium");
-    };
-  });
-}
+        let gIdx = 0;
+        const setIdx = (n, animate=true) => {
+          if (!track || count <= 0) return;
+          gIdx = Math.max(0, Math.min(n, count - 1));
+          track.style.transition = animate ? "transform .22s ease" : "none";
+          track.style.transform = `translateX(${-gIdx * 100}%)`;
+          if (dots.length) dots.forEach((d,i)=>d.classList.toggle("active", i===gIdx));
+        };
 
-// ========= Корзина и оформление =========
-function openCart(){
-  if (state.cart.length === 0){
-    openSheet(`<div class="row"><b>Корзина пуста</b></div>`);
-    return;
-  }
-  const rows = state.cart.map((it,idx)=>`
-    <div class="row">
-      <div>
-        <div><b>${esc(it.title)}</b> ${it.size?`[${esc(it.size)}]`:""}</div>
-        <div>${money(it.price)} × ${it.qty}</div>
-      </div>
-      <div>
-        <button data-a="minus" data-i="${idx}">–</button>
-        <button data-a="plus"  data-i="${idx}">+</button>
-        <button data-a="rm"    data-i="${idx}">✕</button>
-      </div>
-    </div>
-  `).join("");
-  const total = state.cart.reduce((s,i)=>s+i.price*i.qty,0);
-  openSheet(`
-    <h3>Корзина</h3>
-    ${rows}
-    <div class="row"><b>Итого:</b><b>${money(total)}</b></div>
-    <button id="toCheckout" class="btn primary">Оформить</button>
-  `);
+        let startX = 0, startY = 0, dx = 0, dragging = false;
 
-  sheet.onclick = (e)=>{
-    const a = e.target?.dataset?.a;
-    if(!a) return;
-    const i = +e.target.dataset.i;
-    if(a==="plus")  state.cart[i].qty++;
-    if(a==="minus") state.cart[i].qty = Math.max(1, state.cart[i].qty-1);
-    if(a==="rm")    state.cart.splice(i,1);
-    updateCartBadge();
-    closeSheet(); openCart();
-  };
-  $("#toCheckout").onclick = () => { closeSheet(); openCheckout(); };
-}
+        gallery.addEventListener("touchstart", (e) => {
+          if (count <= 1) return;
+          const t = e.touches[0];
+          startX = t.clientX;
+          startY = t.clientY;
+          dx = 0;
+          dragging = true;
+          if (track) track.style.transition = "none";
+        }, {passive:true});
 
-function openCheckout(){
-  const total = state.cart.reduce((s,i)=>s+i.price*i.qty,0);
-  openSheet(`
-    <h3>Оформление</h3>
-    <div class="row"><label>ФИО</label><input id="fio" placeholder="Иванов Иван"/></div>
-    <div class="row"><label>Телефон (+7XXXXXXXXXX)</label><input id="phone" inputmode="tel" placeholder="+7XXXXXXXXXX"/></div>
-    <div class="row"><label>Адрес/СДЭК</label><textarea id="addr" rows="2" placeholder="Город, пункт выдачи..."></textarea></div>
-    <div class="row"><label>Комментарий к заказу (размер)</label><textarea id="comment" rows="2" placeholder="Например: размер L, цвет черный"></textarea></div>
-    <div class="row"><label>Telegram (для связи с Вами)</label><input id="tguser" placeholder="@username"/></div>
-    <div class="row"><b>Сумма:</b><b>${money(total)}</b></div>
-    <button id="submitOrder" class="btn primary">Отправить</button>
-  `);
+        gallery.addEventListener("touchmove", (e) => {
+          if (!dragging || count <= 1 || !track) return;
+          const t = e.touches[0];
+          const moveX = t.clientX - startX;
+          const moveY = t.clientY - startY;
+          if (Math.abs(moveY) > Math.abs(moveX)) return;
 
-  $("#submitOrder").onclick = async () => {
-    const fio   = $("#fio");
-    const phone = $("#phone");
-    const addr  = $("#addr");
-    const comm  = $("#comment");
-    const tguser= $("#tguser");
+          dx = moveX;
+          track.style.transform = `translateX(calc(${-gIdx * 100}% + ${dx}px))`;
+        }, {passive:true});
 
-    const okPhone = /^\+7\d{10}$/.test(phone.value.trim());
-    [fio, phone].forEach(el=>el.classList.remove("bad"));
-    if (!fio.value.trim()) { fio.classList.add("bad"); return; }
-    if (!okPhone)          { phone.classList.add("bad"); return; }
+        gallery.addEventListener("touchend", () => {
+          if (!dragging || count <= 1) return;
+          dragging = false;
 
-    const payload = {
-      full_name: fio.value.trim(),
-      phone: phone.value.trim(),
-      address: addr.value.trim(),
-      comment: comm.value.trim(),
-      telegram: tguser.value.trim(),
-      items: state.cart.map(it=>({ product_id: it.id, size: it.size, qty: it.qty }))
-    };
+          const threshold = 40;
+          if (dx > threshold && gIdx > 0) setIdx(gIdx - 1);
+          else if (dx < -threshold && gIdx < count - 1) setIdx(gIdx + 1);
+          else setIdx(gIdx);
+        });
 
-    try { tg?.sendData?.(JSON.stringify(payload)); } catch(e){}
-    try {
-      await fetch(`${API}/api/order`, {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify(payload)
-      });
-    } catch(e){}
-
-    tg?.HapticFeedback?.notificationOccurred?.("success");
-    closeSheet();
-  };
-}
-
-// ========= Нижние кнопки =========
-writeBtn.onclick = () => {
-  if (MANAGER_USERNAME) {
-    const url = `https://t.me/${MANAGER_USERNAME}`;
-    if (tg?.openLink) tg.openLink(url); else window.open(url, "_blank");
-  } else {
-    const url = `tg://user?id=${MANAGER_ID}`;
-    if (tg?.openTelegramLink) tg.openTelegramLink(url); else window.location.href = url;
-  }
-};
-checkoutBtn.onclick = () => openCheckout();
-cartBtn.onclick = () => openCart();
-
-// ========= Инициализация =========
-(async function init(){
-  try {
-    const cfg = await loadConfig();
-    if (cfg?.title) {
-      if (titleEl)   titleEl.textContent = cfg.title;
-      document.title = cfg.title;
-      if (subtitleEl && !subtitleEl.textContent.trim()) {
-        subtitleEl.textContent = "";
+        gallery.querySelectorAll("img").forEach(img=>{
+          img.onerror = () => {
+            const th = img.closest(".thumb");
+            if (th) th.style.display = "none";
+          };
+        });
       }
-    }
-    // Показать видео (если есть) или логотип
-    renderHome(cfg?.logo_url || "", cfg?.video_url || "");
-  } catch (e) {
-    heroEl?.classList?.add("hidden");
+
+      const btn = $("#btn-" + p.id);
+      if (btn) {
+        btn.onclick = () => {
+          const sel = $("#size-" + p.id);
+          const size = sel ? sel.value : "";
+
+          const key = `${p.id}:${size || ""}`;
+          const f = state.cart.find(it => it.key === key);
+          if (f) f.qty += 1;
+          else state.cart.push({ key, id:p.id, title:p.title, price:p.price, size, qty:1 });
+
+          updateCartBadge();
+          tg?.HapticFeedback?.impactOccurred?.("medium");
+        };
+      }
+    });
   }
 
-  try {
-    const cats = await loadCategories();
-    renderCategories(cats);
-  } catch {}
+  // ====== FIX: Telegram iOS кнопки не нажимаются ======
+  bindTap(writeBtn, () => {
+    const url = MANAGER_USERNAME
+      ? `https://t.me/${MANAGER_USERNAME}`
+      : `tg://user?id=${MANAGER_ID}`;
 
-  updateCartBadge();
-})();
-
-// ========= Просмотр фото (карточки товаров) =========
-const imgViewer = document.querySelector("#imgViewer");
-const imgViewerImg = imgViewer?.querySelector("img");
-
-if (productsEl && imgViewer && imgViewerImg) {
-  productsEl.addEventListener("click", (e) => {
-    const target = e.target;
-    const img = target && target.closest ? target.closest(".thumb img") : null;
-    if (!img) return;
-    const src = img.getAttribute("src");
-    if (!src) return;
-    imgViewerImg.src = src;
-    imgViewer.classList.add("show");
+    if (tg?.openLink && url.startsWith("https://")) tg.openLink(url);
+    else if (tg?.openTelegramLink && url.startsWith("tg://")) tg.openTelegramLink(url);
+    else window.location.href = url;
   });
 
-  imgViewer.addEventListener("click", () => {
-    imgViewer.classList.remove("show");
-    imgViewerImg.src = "";
-  });
+  bindTap(cartBtn, () => openCart());
+  bindTap(checkoutBtn, () => openCheckout());
+
+  // ===== init =====
+  (async()=>{
+    try {
+      const cfg = await loadConfig();
+      if (cfg?.title) {
+        if (titleEl) titleEl.textContent = cfg.title;
+        document.title = cfg.title;
+        if (subtitleEl) subtitleEl.textContent = "";
+      }
+      renderHome(cfg?.logo_url || "", cfg?.video_url || "");
+    } catch {}
+
+    try {
+      const cats = await loadCategories();
+      renderCategories(cats);
+    } catch {}
+
+    updateCartBadge();
+  })();
 }
