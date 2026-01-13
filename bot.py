@@ -1,6 +1,13 @@
 import asyncio, json, logging, os, os.path as op, sqlite3
 from typing import Optional
 
+from dotenv import load_dotenv
+load_dotenv()  # ✅ ВАЖНО: env должен загрузиться ДО импорта db.py
+
+# ✅ используем именно DB_PATH и пробрасываем в env, чтобы db.py увидел правильную БД
+DB_PATH = os.getenv("DB_PATH", "data.sqlite").strip() or "data.sqlite"
+os.environ["DB_PATH"] = DB_PATH  # ✅ фикс: db.py берёт DB_PATH при импорте
+
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import (
@@ -12,27 +19,22 @@ from aiogram.types import (
 )
 from aiogram.client.default import DefaultBotProperties
 from aiohttp import web, ClientSession
-from dotenv import load_dotenv
 
 from db import get_categories, get_subcategories, get_products, get_product, create_order
 
-# ✅ попробуем импортировать функцию импорта (как в PLACE-shop)
+# ✅ попробуем импортировать функции импорта/схемы (как в PLACE-shop)
 try:
-    from seed_from_csv import seed_from_csv  # expected: seed_from_csv(csv_file: str, clear: bool=False)
+    from seed_from_csv import seed_from_csv, ensure_schema  # expected: seed_from_csv(csv_file: str, clear: bool=False)
 except Exception:
     seed_from_csv = None
-
-load_dotenv()
+    ensure_schema = None
 
 BOT_TOKEN   = os.getenv("BOT_TOKEN", "").strip()
 
-# ✅ Railway обычно даёт PORT, дефолт лучше 8080, но можно оставить 8000 если привык
+# ✅ Railway обычно даёт PORT, дефолт лучше 8080
 PORT        = int(os.getenv("PORT", "8080"))
 
 STORE_TITLE = (os.getenv("STORE_TITLE", "LAYOUTPLACE Shop").strip() or "LAYOUTPLACE Shop")
-
-# ✅ используем именно DB_PATH (и подключай Volume /data/..)
-DB_PATH     = os.getenv("DB_PATH", "data.sqlite")
 
 # ✅ Google Sheets CSV URL (именно export?format=csv&gid=0)
 GOOGLE_SHEET_CSV_URL = os.getenv("GOOGLE_SHEET_CSV_URL", "").strip()
@@ -51,17 +53,17 @@ def _parse_ids(s: str):
 
 ADMIN_CHAT_IDS = _parse_ids(os.getenv("ADMIN_CHAT_IDS", "6773668793"))
 
-# ✅ WebApp URL: не всегда надо +"/web/" слепо — приводим аккуратно
+# ✅ WebApp URL: приводим аккуратно к /web/
 WEBAPP_URL = (os.getenv("WEBAPP_URL", "").strip() or "").rstrip("/")
 if WEBAPP_URL and not WEBAPP_URL.startswith(("http://", "https://")):
     WEBAPP_URL = "https://" + WEBAPP_URL.lstrip("/")
-# хотим чтобы открывался именно /web/
-if WEBAPP_URL and not WEBAPP_URL.endswith("/web"):
-    if not WEBAPP_URL.endswith("/web/"):
-        WEBAPP_URL = WEBAPP_URL + "/web/"
+if WEBAPP_URL:
+    if not WEBAPP_URL.endswith("/web") and not WEBAPP_URL.endswith("/web/"):
+        WEBAPP_URL += "/web/"
+    elif WEBAPP_URL.endswith("/web"):
+        WEBAPP_URL += "/"
 else:
-    if WEBAPP_URL.endswith("/web"):
-        WEBAPP_URL = WEBAPP_URL + "/"
+    WEBAPP_URL = "https://example.com/web/"
 
 THANKYOU_TEXT = "Спасибо за заказ! В скором времени с Вами свяжется менеджер и пришлет реквизиты для оплаты!"
 
@@ -69,7 +71,40 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp  = Dispatcher()
 
+
 # ---- helpers ----
+def _ensure_schema_fallback():
+    """
+    ✅ Фоллбек: гарантируем наличие таблиц (чтобы не было 'no such table: products').
+    Берём models.sql рядом с ботом.
+    """
+    models_path = "models.sql"
+    if not op.isfile(models_path):
+        return
+    try:
+        with open(models_path, "r", encoding="utf-8") as f:
+            sql = f.read()
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.executescript(sql)
+        logging.info("DB schema ensured (fallback)")
+    except Exception as e:
+        logging.exception("Schema ensure fallback failed: %s", e)
+
+
+def ensure_db_ready():
+    # ✅ 1) пробуем ensure_schema из seed_from_csv
+    if callable(ensure_schema):
+        try:
+            ensure_schema()
+            logging.info("DB schema ensured (seed_from_csv.ensure_schema)")
+            return
+        except Exception as e:
+            logging.exception("ensure_schema() failed: %s", e)
+
+    # ✅ 2) фоллбек через models.sql
+    _ensure_schema_fallback()
+
+
 def _get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
     """Читает settings.value по ключу; если таблицы/ключа нет — вернёт default."""
     try:
@@ -80,8 +115,10 @@ def _get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
     except Exception:
         return default
 
+
 def _is_admin(user_id: int) -> bool:
     return (user_id in set(ADMIN_CHAT_IDS))
+
 
 async def _download_csv(url: str, dest_path: str) -> None:
     async with ClientSession() as sess:
@@ -94,13 +131,16 @@ async def _download_csv(url: str, dest_path: str) -> None:
     with open(dest_path, "wb") as f:
         f.write(data)
 
+
 async def sync_from_google(clear_products: bool = False) -> str:
     """
     Скачивает CSV из Google Sheets и импортирует товары в БД.
-    clear_products=False — НЕ трогает заказы/настройки, обновляет только товары (как в PLACE-shop).
+    clear_products=False — НЕ трогает заказы/настройки, обновляет только товары.
     """
     if not GOOGLE_SHEET_CSV_URL:
         raise RuntimeError("GOOGLE_SHEET_CSV_URL не задан в Railway Variables")
+
+    ensure_db_ready()  # ✅ перед импортом гарантируем схему
 
     tmp_csv = "/tmp/products_sheet.csv"
     await _download_csv(GOOGLE_SHEET_CSV_URL, tmp_csv)
@@ -116,13 +156,14 @@ async def sync_from_google(clear_products: bool = False) -> str:
             raise RuntimeError((p.stderr or p.stdout or "").strip()[:4000])
         return f"✅ Синк выполнен (script). {(p.stdout or '').strip()}"
     else:
-        # основной путь — импорт функции
         seed_from_csv(tmp_csv, clear=clear_products)
         return "✅ Товары обновлены из Google Sheets."
+
 
 # ---------- Web ----------
 async def index_handler(request):
     return web.FileResponse(op.join("web", "index.html"))
+
 
 async def file_handler(request):
     path = request.match_info.get("path", "")
@@ -133,11 +174,23 @@ async def file_handler(request):
         return web.Response(status=404, text="Not found")
     return web.FileResponse(p)
 
+
 async def api_config(request):
-    logo_url   = _get_setting("logo_url", "")
-    video_url  = _get_setting("hero_video_url", "")
-    hero_url   = video_url or logo_url
-    hero_type  = "video" if video_url else ("image" if logo_url else "")
+    """
+    ✅ ФИКС ВИДЕО:
+    - фронт ждёт video_url
+    - импорт сохранял hero_video_url
+    → отдаём video_url = video_url || hero_video_url
+    """
+    ensure_db_ready()
+
+    logo_url  = _get_setting("logo_url", "") or ""
+    video_url = (_get_setting("video_url", "") or "").strip()
+    if not video_url:
+        video_url = (_get_setting("hero_video_url", "") or "").strip()
+
+    hero_url  = video_url or logo_url
+    hero_type = "video" if video_url else ("image" if logo_url else "")
 
     return web.json_response({
         "title": STORE_TITLE,
@@ -147,19 +200,27 @@ async def api_config(request):
         "hero_type": hero_type,
     })
 
+
 async def api_categories(request):
+    ensure_db_ready()
     return web.json_response(get_categories())
 
+
 async def api_subcategories(request):
+    ensure_db_ready()
     cat = request.rel_url.query.get("category")
     return web.json_response(get_subcategories(cat))
 
+
 async def api_products(request):
+    ensure_db_ready()
     cat = request.rel_url.query.get("category")
     sub = request.rel_url.query.get("subcategory")
     return web.json_response(get_products(cat, sub))
 
+
 async def api_order(request):
+    ensure_db_ready()
     data = await request.json()
     items, total = [], 0
     for it in data.get("items", []):
@@ -185,12 +246,14 @@ async def api_order(request):
     await notify_admins(order_id, data, total, items, user=None)
     return web.json_response({"ok": True, "order_id": order_id})
 
-# ---------- IMG PROXY ----------
+
+# ---------- IMG PROXY (только для картинок) ----------
 async def img_proxy(request):
     url = request.rel_url.query.get("u", "")
     if not (url.startswith("http://") or url.startswith("https://")):
         return web.Response(status=400, text="bad url")
 
+    # ✅ для КАРТИНОК можно резать ?query, но оставим корректно
     qpos = url.find("?")
     if qpos > -1:
         url = url[:qpos]
@@ -215,11 +278,12 @@ async def img_proxy(request):
                     return web.Response(status=resp.status, text="fetch error")
                 data = await resp.read()
                 ctype = resp.headers.get("Content-Type", "application/octet-stream")
-                headers = {"Cache-Control":"public, max-age=31536000"}
+                headers = {"Cache-Control": "public, max-age=31536000"}
                 return web.Response(body=data, content_type=ctype, headers=headers)
     except Exception as e:
         logging.exception("IMG proxy error: %s", e)
         return web.Response(status=502, text="proxy error")
+
 
 def build_app():
     app = web.Application()
@@ -243,6 +307,7 @@ def build_app():
     app.router.add_get("/img", img_proxy)
     return app
 
+
 # ---------- Bot ----------
 @dp.message(Command("start"))
 async def start(m: Message):
@@ -250,10 +315,11 @@ async def start(m: Message):
     kb = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(
             text=f"Открыть {title_upper}",
-            web_app=WebAppInfo(url=WEBAPP_URL or "https://example.com")
+            web_app=WebAppInfo(url=WEBAPP_URL)
         )
     ]])
     await m.answer(f"{title_upper} — мини-магазин в Telegram. Открой витрину ниже:", reply_markup=kb)
+
 
 @dp.message(Command("sync"))
 async def cmd_sync(m: Message):
@@ -267,6 +333,7 @@ async def cmd_sync(m: Message):
     except Exception as e:
         logging.exception("sync failed: %s", e)
         await m.answer(f"❌ Ошибка синка: {e}")
+
 
 async def notify_admins(order_id: int, data: dict, total: int, items_payload: list, user: Optional[User]):
     uname = f"@{user.username}" if (user and user.username) else "—"
@@ -291,6 +358,7 @@ async def notify_admins(order_id: int, data: dict, total: int, items_payload: li
             await bot.send_message(cid, text, disable_web_page_preview=True)
         except Exception as e:
             logging.exception("Admin DM failed to %s: %s", cid, e)
+
 
 @dp.message(F.web_app_data)
 async def on_webapp_data(m: Message):
@@ -326,17 +394,23 @@ async def on_webapp_data(m: Message):
     await m.answer(f"✅ Заказ №{order_id} оформлен.\n\n{THANKYOU_TEXT}")
     await notify_admins(order_id, data, total, items_payload, user=m.from_user)
 
+
 async def main():
     assert BOT_TOKEN, "BOT_TOKEN is not set"
+
+    ensure_db_ready()  # ✅ на старте, чтобы /api/categories не падал
+
     app = build_app()
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", PORT).start()
-    logging.info(f"Web server started on port {PORT}")
+    logging.info(f"Web server started on port {PORT} (DB_PATH={DB_PATH})")
+
     try:
         await dp.start_polling(bot)
     finally:
         await bot.session.close()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
