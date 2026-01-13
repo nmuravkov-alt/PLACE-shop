@@ -2,7 +2,7 @@ import asyncio, json, logging, os, os.path as op, sqlite3
 from typing import Optional
 
 from dotenv import load_dotenv
-load_dotenv()  # ✅ ВАЖНО: env должен загрузиться ДО импорта db.py
+load_dotenv()  # ✅ env должен загрузиться ДО импорта db.py
 
 # ✅ используем именно DB_PATH и пробрасываем в env, чтобы db.py увидел правильную БД
 DB_PATH = os.getenv("DB_PATH", "data.sqlite").strip() or "data.sqlite"
@@ -71,6 +71,9 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp  = Dispatcher()
 
+# ✅ кеш-флаг, чтобы не прогонять ensure_schema/models.sql на каждый запрос
+_DB_READY = False
+
 
 # ---- helpers ----
 def _ensure_schema_fallback():
@@ -92,17 +95,28 @@ def _ensure_schema_fallback():
 
 
 def ensure_db_ready():
-    # ✅ 1) пробуем ensure_schema из seed_from_csv
+    """
+    ✅ 1) ensure_schema() из seed_from_csv (если есть)
+    ✅ 2) иначе executescript(models.sql)
+    Делается один раз за процесс.
+    """
+    global _DB_READY
+    if _DB_READY:
+        return
+
+    # 1) пробуем ensure_schema из seed_from_csv
     if callable(ensure_schema):
         try:
             ensure_schema()
             logging.info("DB schema ensured (seed_from_csv.ensure_schema)")
+            _DB_READY = True
             return
         except Exception as e:
             logging.exception("ensure_schema() failed: %s", e)
 
-    # ✅ 2) фоллбек через models.sql
+    # 2) фоллбек через models.sql
     _ensure_schema_fallback()
+    _DB_READY = True
 
 
 def _get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
@@ -185,6 +199,7 @@ async def api_config(request):
     ensure_db_ready()
 
     logo_url  = _get_setting("logo_url", "") or ""
+
     video_url = (_get_setting("video_url", "") or "").strip()
     if not video_url:
         video_url = (_get_setting("hero_video_url", "") or "").strip()
@@ -220,8 +235,13 @@ async def api_products(request):
 
 
 async def api_order(request):
+    """
+    ✅ Заказ через HTTP (WebApp может слать сюда).
+    Если фронт прислал user_id/username — сохраним (иначе будет 0/None).
+    """
     ensure_db_ready()
     data = await request.json()
+
     items, total = [], 0
     for it in data.get("items", []):
         p = get_product(int(it["product_id"]))
@@ -232,9 +252,15 @@ async def api_order(request):
         items.append({"product_id": p["id"], "size": size, "qty": qty, "price": p["price"]})
         total += p["price"] * qty
 
+    # ✅ пробуем взять идентификаторы пользователя из payload
+    user_id = int(data.get("user_id") or 0)
+    username = data.get("username")
+    if username is not None:
+        username = str(username).strip() or None
+
     order_id = create_order(
-        user_id=0,
-        username=None,
+        user_id=user_id,
+        username=username,
         full_name=data.get("full_name"),
         phone=data.get("phone"),
         address=data.get("address"),
@@ -243,6 +269,7 @@ async def api_order(request):
         total_price=total,
         items=items,
     )
+
     await notify_admins(order_id, data, total, items, user=None)
     return web.json_response({"ok": True, "order_id": order_id})
 
@@ -253,10 +280,17 @@ async def img_proxy(request):
     if not (url.startswith("http://") or url.startswith("https://")):
         return web.Response(status=400, text="bad url")
 
-    # ✅ для КАРТИНОК можно резать ?query, но оставим корректно
-    qpos = url.find("?")
-    if qpos > -1:
-        url = url[:qpos]
+    lower = url.lower()
+
+    # ✅ не проксируем видео
+    if lower.endswith((".mp4", ".webm", ".mov")):
+        return web.Response(status=400, text="video not allowed")
+
+    # ✅ query режем только для картинок (обычно безопасно)
+    if any(ext in lower for ext in [".jpg", ".jpeg", ".png", ".webp", ".gif"]):
+        qpos = url.find("?")
+        if qpos > -1:
+            url = url[:qpos]
 
     import re
     m = re.search(r"drive\.google\.com\/file\/d\/([^\/]+)", url, flags=re.I)
@@ -336,13 +370,17 @@ async def cmd_sync(m: Message):
 
 
 async def notify_admins(order_id: int, data: dict, total: int, items_payload: list, user: Optional[User]):
-    uname = f"@{user.username}" if (user and user.username) else "—"
-    buyer_link = f"<a href='tg://user?id={user.id}'>профиль</a>" if user else "—"
+    uname = f"@{user.username}" if (user and user.username) else (f"@{data.get('username')}" if data.get("username") else "—")
+    buyer_link = f"<a href='tg://user?id={user.id}'>профиль</a>" if user else (
+        f"<a href='tg://user?id={data.get('user_id')}'>профиль</a>" if data.get("user_id") else "—"
+    )
+
     items_text = "\n".join([
         f"• {get_product(it['product_id'])['title']} "
         f"[{it.get('size') or '—'}] × {it.get('qty',1)} — {it.get('price',0)*it.get('qty',1)} ₽"
         for it in items_payload
     ]) or "—"
+
     text = (
         f"<b>Новый заказ #{order_id}</b>\n"
         f"Клиент: <b>{data.get('full_name') or '—'}</b> {uname} ({buyer_link})\n"
@@ -399,6 +437,7 @@ async def main():
     assert BOT_TOKEN, "BOT_TOKEN is not set"
 
     ensure_db_ready()  # ✅ на старте, чтобы /api/categories не падал
+    logging.info(f"DB_PATH resolved to: {op.abspath(DB_PATH)}")
 
     app = build_app()
     runner = web.AppRunner(app)
