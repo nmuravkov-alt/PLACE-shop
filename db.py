@@ -1,11 +1,80 @@
 import sqlite3
 import os
+from pathlib import Path
 
 DB_PATH = os.getenv("DB_PATH", "data.sqlite")
+
+# если models.sql есть в проекте — используем его
+MODELS_SQL = os.getenv("MODELS_SQL", "models.sql")
+
+
+# ---------- schema ----------
+def ensure_schema():
+    """
+    Гарантирует, что таблицы существуют.
+    1) Если есть models.sql — применяем его.
+    2) Иначе создаём минимальные таблицы напрямую.
+    """
+    try:
+        p = Path(MODELS_SQL)
+        if p.is_file():
+            sql = p.read_text(encoding="utf-8")
+            with sqlite3.connect(DB_PATH) as conn:
+                conn.executescript(sql)
+            return
+    except Exception:
+        pass
+
+    # fallback: минимальная схема (чтобы не падало)
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS products (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              title TEXT NOT NULL,
+              category TEXT,
+              subcategory TEXT,
+              price INTEGER DEFAULT 0,
+              image_url TEXT,
+              images_urls TEXT,
+              sizes TEXT,
+              is_active INTEGER DEFAULT 1,
+              description TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS settings (
+              key TEXT PRIMARY KEY,
+              value TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS orders (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              user_id INTEGER,
+              username TEXT,
+              full_name TEXT,
+              phone TEXT,
+              address TEXT,
+              comment TEXT,
+              telegram TEXT,
+              total_price INTEGER DEFAULT 0,
+              created_at TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS order_items (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              order_id INTEGER,
+              product_id INTEGER,
+              size TEXT,
+              qty INTEGER DEFAULT 1,
+              price INTEGER DEFAULT 0
+            );
+            """
+        )
 
 
 # ---------- low-level ----------
 def connect():
+    ensure_schema()
     return sqlite3.connect(DB_PATH)
 
 
@@ -19,8 +88,15 @@ def trim(s: str) -> str:
 
 
 def norm_py(s: str) -> str:
-    """Нормализация в PYTHON (кириллица ок): trim + lower."""
     return trim(s).lower()
+
+
+def _variants(s: str):
+    t = trim(s)
+    if not t:
+        return []
+    v = {t, t.lower(), t.upper()}
+    return [x for x in v if x]
 
 
 # ---------- settings ----------
@@ -50,10 +126,6 @@ def get_logo_url() -> str:
 
 # ---------- catalog ----------
 def get_categories():
-    """
-    Берём все уникальные категории как есть (trim),
-    а объединяем дубли по регистру в PYTHON (кириллица ок).
-    """
     with connect() as conn:
         cur = conn.execute(
             """
@@ -65,25 +137,19 @@ def get_categories():
         )
         rows = dicts(cur)
 
-    merged = {}  # key: lower(trim) -> display title
+    merged = {}
     for r in rows:
         t = trim(r.get("title"))
         if not t:
             continue
         k = norm_py(t)
         if k not in merged:
-            merged[k] = t  # первое встретившееся "красивое" имя
+            merged[k] = t
 
-    # фронт ожидает [{title, image_url}]
     return [{"title": merged[k], "image_url": ""} for k in sorted(merged.keys())]
 
 
 def get_subcategories(category: str):
-    """
-    Подкатегории: сначала найдём реальные значения category в БД,
-    которые соответствуют выбранной категории по python-нормализации,
-    потом вытащим subcategory уже по точному совпадению.
-    """
     cat_in = trim(category)
     if not cat_in:
         return []
@@ -91,7 +157,6 @@ def get_subcategories(category: str):
     cat_key = norm_py(cat_in)
 
     with connect() as conn:
-        # 1) все варианты category из БД (trim)
         cur = conn.execute(
             """
             SELECT DISTINCT TRIM(COALESCE(category,'')) AS c
@@ -101,12 +166,10 @@ def get_subcategories(category: str):
         )
         cats = [trim(r["c"]) for r in dicts(cur) if trim(r.get("c"))]
 
-        # 2) выбираем те, что совпадают по python lower
         matched = [c for c in cats if norm_py(c) == cat_key]
         if not matched:
-            matched = [cat_in]  # fallback
+            matched = [cat_in]
 
-        # 3) тянем подкатегории по точным category (TRIM сравнение)
         placeholders = ",".join(["?"] * len(matched))
         cur2 = conn.execute(
             f"""
@@ -121,7 +184,6 @@ def get_subcategories(category: str):
         )
         subs_raw = [trim(r["title"]) for r in dicts(cur2) if trim(r.get("title"))]
 
-    # мерджим по регистру в PYTHON
     merged = {}
     for s in subs_raw:
         k = norm_py(s)
@@ -134,7 +196,7 @@ def _row_to_product(r: dict) -> dict:
     raw_sizes = trim(r.get("sizes"))
     sizes = [s.strip() for s in raw_sizes.split(",") if s.strip()] if raw_sizes else []
 
-    images_urls = trim(r.get("images_urls"))  # "url1|url2|url3"
+    images_urls = trim(r.get("images_urls"))
 
     return {
         "id": r["id"],
@@ -144,7 +206,7 @@ def _row_to_product(r: dict) -> dict:
         "price": int(r.get("price") or 0),
 
         "image_url": trim(r.get("image_url")),
-        "images_urls": images_urls,  # ✅ на фронт
+        "images_urls": images_urls,
 
         "description": trim(r.get("description")),
 
@@ -152,20 +214,6 @@ def _row_to_product(r: dict) -> dict:
         "sizes_text": ",".join(sizes) if sizes else "",
         "is_active": int(r.get("is_active") if r.get("is_active") is not None else 1),
     }
-
-
-def _variants(s: str):
-    """
-    Варианты для точного сравнения в SQLite (без LOWER()):
-    - исходный trim
-    - python lower
-    - python upper
-    """
-    t = trim(s)
-    if not t:
-        return []
-    v = {t, t.lower(), t.upper()}
-    return [x for x in v if x]
 
 
 def get_products(category=None, subcategory=None):
@@ -179,7 +227,6 @@ def get_products(category=None, subcategory=None):
             q += f" AND TRIM(COALESCE(category,'')) IN ({placeholders})"
             args.extend(vs)
 
-    # если subcategory передали (даже пустую) — фильтруем
     if subcategory is not None:
         vs = _variants(subcategory)
         if vs:
@@ -187,7 +234,6 @@ def get_products(category=None, subcategory=None):
             q += f" AND TRIM(COALESCE(subcategory,'')) IN ({placeholders})"
             args.extend(vs)
         else:
-            # если передали пустую — ищем пустые
             q += " AND TRIM(COALESCE(subcategory,'')) = ''"
 
     q += " ORDER BY id DESC"
