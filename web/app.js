@@ -286,7 +286,7 @@ function initApp() {
     tagline.className = "subtitle";
     tagline.style.textAlign = "center";
     tagline.style.marginTop = "8px";
-    tagline.textContent = "https://t.me/akumastreetwear";
+    tagline.textContent = "https://t.me/muraplace";
     heroEl.appendChild(tagline);
 
     heroEl.classList.remove("hidden");
