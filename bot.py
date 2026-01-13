@@ -1,29 +1,6 @@
 import asyncio, json, logging, os, os.path as op, sqlite3
 from typing import Optional
 
-from dotenv import load_dotenv
-load_dotenv()  # env должен загрузиться ДО импорта db.py / seed_from_csv
-
-# ===================== DB PATH FIX =====================
-DB_PATH = (os.getenv("DB_PATH", "data.sqlite") or "data.sqlite").strip()
-if not DB_PATH:
-    DB_PATH = "data.sqlite"
-os.environ["DB_PATH"] = DB_PATH  # чтобы db.py/seed_from_csv увидели верный путь
-
-
-def _ensure_db_dir():
-    """Создаёт директорию для DB_PATH, если она нужна (например /data)."""
-    try:
-        d = op.dirname(DB_PATH)
-        if d and not op.exists(d):
-            os.makedirs(d, exist_ok=True)
-    except Exception as e:
-        logging.exception("Failed to ensure DB dir: %s", e)
-
-
-_ensure_db_dir()
-
-# ===================== imports after env/db path =====================
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import (
@@ -35,21 +12,30 @@ from aiogram.types import (
 )
 from aiogram.client.default import DefaultBotProperties
 from aiohttp import web, ClientSession
+from dotenv import load_dotenv
 
 from db import get_categories, get_subcategories, get_products, get_product, create_order
 
-# ✅ попробуем импортировать функции импорта/схемы (как в PLACE-shop)
+# ✅ попробуем импортировать функцию импорта (как в PLACE-shop)
 try:
-    from seed_from_csv import seed_from_csv, ensure_schema  # seed_from_csv(csv_file: str, clear: bool=False)
+    from seed_from_csv import seed_from_csv  # expected: seed_from_csv(csv_file: str, clear: bool=False)
 except Exception:
     seed_from_csv = None
-    ensure_schema = None
 
-# ===================== config =====================
-BOT_TOKEN = (os.getenv("BOT_TOKEN", "") or "").strip()
-PORT = int(os.getenv("PORT", "8000"))  # у тебя в логах 8000, оставляем так
-STORE_TITLE = (os.getenv("STORE_TITLE", "AKUMA SHOP") or "AKUMA SHOP").strip()
-GOOGLE_SHEET_CSV_URL = (os.getenv("GOOGLE_SHEET_CSV_URL", "") or "").strip()
+load_dotenv()
+
+BOT_TOKEN   = os.getenv("BOT_TOKEN", "").strip()
+
+# ✅ Railway обычно даёт PORT, дефолт лучше 8080, но можно оставить 8000 если привык
+PORT        = int(os.getenv("PORT", "8080"))
+
+STORE_TITLE = (os.getenv("STORE_TITLE", "LAYOUTPLACE Shop").strip() or "LAYOUTPLACE Shop")
+
+# ✅ используем именно DB_PATH (и подключай Volume /data/..)
+DB_PATH     = os.getenv("DB_PATH", "data.sqlite")
+
+# ✅ Google Sheets CSV URL (именно export?format=csv&gid=0)
+GOOGLE_SHEET_CSV_URL = os.getenv("GOOGLE_SHEET_CSV_URL", "").strip()
 
 def _parse_ids(s: str):
     out = []
@@ -65,76 +51,28 @@ def _parse_ids(s: str):
 
 ADMIN_CHAT_IDS = _parse_ids(os.getenv("ADMIN_CHAT_IDS", "6773668793"))
 
-WEBAPP_URL = (os.getenv("WEBAPP_URL", "") or "").strip().rstrip("/")
+# ✅ WebApp URL: не всегда надо +"/web/" слепо — приводим аккуратно
+WEBAPP_URL = (os.getenv("WEBAPP_URL", "").strip() or "").rstrip("/")
 if WEBAPP_URL and not WEBAPP_URL.startswith(("http://", "https://")):
     WEBAPP_URL = "https://" + WEBAPP_URL.lstrip("/")
-if WEBAPP_URL:
-    if not WEBAPP_URL.endswith("/web") and not WEBAPP_URL.endswith("/web/"):
-        WEBAPP_URL += "/web/"
-    elif WEBAPP_URL.endswith("/web"):
-        WEBAPP_URL += "/"
+# хотим чтобы открывался именно /web/
+if WEBAPP_URL and not WEBAPP_URL.endswith("/web"):
+    if not WEBAPP_URL.endswith("/web/"):
+        WEBAPP_URL = WEBAPP_URL + "/web/"
 else:
-    WEBAPP_URL = "https://example.com/web/"
+    if WEBAPP_URL.endswith("/web"):
+        WEBAPP_URL = WEBAPP_URL + "/"
 
 THANKYOU_TEXT = "Спасибо за заказ! В скором времени с Вами свяжется менеджер и пришлет реквизиты для оплаты!"
 
 logging.basicConfig(level=logging.INFO)
-
 bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
-dp = Dispatcher()
+dp  = Dispatcher()
 
-_DB_READY = False
-
-# ===================== DB helpers =====================
-def _ensure_schema_fallback():
-    """Фоллбек: выполняет models.sql, чтобы не было 'no such table: products'."""
-    models_path = "models.sql"
-    if not op.isfile(models_path):
-        return
-    try:
-        _ensure_db_dir()
-        with open(models_path, "r", encoding="utf-8") as f:
-            sql = f.read()
-        with sqlite3.connect(DB_PATH) as conn:
-            conn.executescript(sql)
-        logging.info("DB schema ensured (fallback models.sql)")
-    except Exception as e:
-        logging.exception("Schema ensure fallback failed: %s", e)
-
-def ensure_db_ready():
-    """Гарантирует папку + схему. Делает это 1 раз на процесс."""
-    global _DB_READY
-    if _DB_READY:
-        return
-
-    _ensure_db_dir()
-
-    # 1) пробуем ensure_schema из seed_from_csv
-    if callable(ensure_schema):
-        try:
-            ensure_schema()
-            logging.info("DB schema ensured (seed_from_csv.ensure_schema)")
-            _DB_READY = True
-            return
-        except Exception as e:
-            logging.exception("ensure_schema() failed: %s", e)
-            # если упало из-за /data — пробуем mkdir и ещё раз
-            try:
-                _ensure_db_dir()
-                ensure_schema()
-                logging.info("DB schema ensured after mkdir (/data fix)")
-                _DB_READY = True
-                return
-            except Exception as e2:
-                logging.exception("ensure_schema retry failed: %s", e2)
-
-    # 2) фоллбек через models.sql
-    _ensure_schema_fallback()
-    _DB_READY = True
-
+# ---- helpers ----
 def _get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
+    """Читает settings.value по ключу; если таблицы/ключа нет — вернёт default."""
     try:
-        _ensure_db_dir()
         with sqlite3.connect(DB_PATH) as conn:
             cur = conn.execute("SELECT value FROM settings WHERE key=?", (key,))
             row = cur.fetchone()
@@ -143,9 +81,8 @@ def _get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
         return default
 
 def _is_admin(user_id: int) -> bool:
-    return user_id in set(ADMIN_CHAT_IDS)
+    return (user_id in set(ADMIN_CHAT_IDS))
 
-# ===================== sync from google =====================
 async def _download_csv(url: str, dest_path: str) -> None:
     async with ClientSession() as sess:
         async with sess.get(url) as resp:
@@ -158,15 +95,18 @@ async def _download_csv(url: str, dest_path: str) -> None:
         f.write(data)
 
 async def sync_from_google(clear_products: bool = False) -> str:
+    """
+    Скачивает CSV из Google Sheets и импортирует товары в БД.
+    clear_products=False — НЕ трогает заказы/настройки, обновляет только товары (как в PLACE-shop).
+    """
     if not GOOGLE_SHEET_CSV_URL:
         raise RuntimeError("GOOGLE_SHEET_CSV_URL не задан в Railway Variables")
-
-    ensure_db_ready()
 
     tmp_csv = "/tmp/products_sheet.csv"
     await _download_csv(GOOGLE_SHEET_CSV_URL, tmp_csv)
 
     if seed_from_csv is None:
+        # fallback: запустить как скрипт (если импорт функции не сработал)
         import sys, subprocess
         cmd = [sys.executable, "seed_from_csv.py", "--csv", tmp_csv]
         if clear_products:
@@ -176,10 +116,11 @@ async def sync_from_google(clear_products: bool = False) -> str:
             raise RuntimeError((p.stderr or p.stdout or "").strip()[:4000])
         return f"✅ Синк выполнен (script). {(p.stdout or '').strip()}"
     else:
+        # основной путь — импорт функции
         seed_from_csv(tmp_csv, clear=clear_products)
         return "✅ Товары обновлены из Google Sheets."
 
-# ===================== Web handlers =====================
+# ---------- Web ----------
 async def index_handler(request):
     return web.FileResponse(op.join("web", "index.html"))
 
@@ -193,17 +134,10 @@ async def file_handler(request):
     return web.FileResponse(p)
 
 async def api_config(request):
-    ensure_db_ready()
-
-    logo_url = (_get_setting("logo_url", "") or "").strip()
-
-    # ✅ видео могло сохраниться как video_url или hero_video_url
-    video_url = (_get_setting("video_url", "") or "").strip()
-    if not video_url:
-        video_url = (_get_setting("hero_video_url", "") or "").strip()
-
-    hero_url = video_url or logo_url
-    hero_type = "video" if video_url else ("image" if logo_url else "")
+    logo_url   = _get_setting("logo_url", "")
+    video_url  = _get_setting("hero_video_url", "")
+    hero_url   = video_url or logo_url
+    hero_type  = "video" if video_url else ("image" if logo_url else "")
 
     return web.json_response({
         "title": STORE_TITLE,
@@ -214,42 +148,32 @@ async def api_config(request):
     })
 
 async def api_categories(request):
-    ensure_db_ready()
     return web.json_response(get_categories())
 
 async def api_subcategories(request):
-    ensure_db_ready()
     cat = request.rel_url.query.get("category")
     return web.json_response(get_subcategories(cat))
 
 async def api_products(request):
-    ensure_db_ready()
     cat = request.rel_url.query.get("category")
     sub = request.rel_url.query.get("subcategory")
     return web.json_response(get_products(cat, sub))
 
 async def api_order(request):
-    ensure_db_ready()
     data = await request.json()
-
     items, total = [], 0
     for it in data.get("items", []):
         p = get_product(int(it["product_id"]))
         if not p:
             continue
-        qty = int(it.get("qty", 1))
+        qty  = int(it.get("qty", 1))
         size = (it.get("size") or "")
         items.append({"product_id": p["id"], "size": size, "qty": qty, "price": p["price"]})
         total += p["price"] * qty
 
-    user_id = int(data.get("user_id") or 0)
-    username = data.get("username")
-    if username is not None:
-        username = str(username).strip() or None
-
     order_id = create_order(
-        user_id=user_id,
-        username=username,
+        user_id=0,
+        username=None,
         full_name=data.get("full_name"),
         phone=data.get("phone"),
         address=data.get("address"),
@@ -258,25 +182,18 @@ async def api_order(request):
         total_price=total,
         items=items,
     )
-
     await notify_admins(order_id, data, total, items, user=None)
     return web.json_response({"ok": True, "order_id": order_id})
 
-# ---------- IMG PROXY (только картинки) ----------
+# ---------- IMG PROXY ----------
 async def img_proxy(request):
-    url = (request.rel_url.query.get("u", "") or "").strip()
+    url = request.rel_url.query.get("u", "")
     if not (url.startswith("http://") or url.startswith("https://")):
         return web.Response(status=400, text="bad url")
 
-    lower = url.lower()
-    if lower.endswith((".mp4", ".webm", ".mov")):
-        return web.Response(status=400, text="video not allowed")
-
-    # для картинок режем query (опционально)
-    if any(ext in lower for ext in [".jpg", ".jpeg", ".png", ".webp", ".gif"]):
-        qpos = url.find("?")
-        if qpos > -1:
-            url = url[:qpos]
+    qpos = url.find("?")
+    if qpos > -1:
+        url = url[:qpos]
 
     import re
     m = re.search(r"drive\.google\.com\/file\/d\/([^\/]+)", url, flags=re.I)
@@ -298,7 +215,7 @@ async def img_proxy(request):
                     return web.Response(status=resp.status, text="fetch error")
                 data = await resp.read()
                 ctype = resp.headers.get("Content-Type", "application/octet-stream")
-                headers = {"Cache-Control": "public, max-age=31536000"}
+                headers = {"Cache-Control":"public, max-age=31536000"}
                 return web.Response(body=data, content_type=ctype, headers=headers)
     except Exception as e:
         logging.exception("IMG proxy error: %s", e)
@@ -311,25 +228,30 @@ def build_app():
     app.router.add_get("/web", index_handler)
     app.router.add_get("/web/{path:.*}", file_handler)
 
-    # Статика /images (для локального видео/картинок, если они в репо)
+    # Статика /images (для hero mp4/webm или картинок)
     if op.isdir("images"):
         app.router.add_static("/images/", path="images", show_index=False)
 
+    # API
     app.router.add_get("/api/config", api_config)
     app.router.add_get("/api/categories", api_categories)
     app.router.add_get("/api/subcategories", api_subcategories)
     app.router.add_get("/api/products", api_products)
     app.router.add_post("/api/order", api_order)
 
+    # Прокси
     app.router.add_get("/img", img_proxy)
     return app
 
-# ===================== Bot handlers =====================
+# ---------- Bot ----------
 @dp.message(Command("start"))
 async def start(m: Message):
     title_upper = STORE_TITLE.upper()
     kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text=f"Открыть {title_upper}", web_app=WebAppInfo(url=WEBAPP_URL))
+        InlineKeyboardButton(
+            text=f"Открыть {title_upper}",
+            web_app=WebAppInfo(url=WEBAPP_URL or "https://example.com")
+        )
     ]])
     await m.answer(f"{title_upper} — мини-магазин в Telegram. Открой витрину ниже:", reply_markup=kb)
 
@@ -347,16 +269,13 @@ async def cmd_sync(m: Message):
         await m.answer(f"❌ Ошибка синка: {e}")
 
 async def notify_admins(order_id: int, data: dict, total: int, items_payload: list, user: Optional[User]):
-    uname = f"@{user.username}" if (user and user.username) else (f"@{data.get('username')}" if data.get("username") else "—")
-    buyer_link = f"<a href='tg://user?id={user.id}'>профиль</a>" if user else (
-        f"<a href='tg://user?id={data.get('user_id')}'>профиль</a>" if data.get("user_id") else "—"
-    )
-
+    uname = f"@{user.username}" if (user and user.username) else "—"
+    buyer_link = f"<a href='tg://user?id={user.id}'>профиль</a>" if user else "—"
     items_text = "\n".join([
-        f"• {get_product(it['product_id'])['title']} [{it.get('size') or '—'}] × {it.get('qty',1)} — {it.get('price',0)*it.get('qty',1)} ₽"
+        f"• {get_product(it['product_id'])['title']} "
+        f"[{it.get('size') or '—'}] × {it.get('qty',1)} — {it.get('price',0)*it.get('qty',1)} ₽"
         for it in items_payload
     ]) or "—"
-
     text = (
         f"<b>Новый заказ #{order_id}</b>\n"
         f"Клиент: <b>{data.get('full_name') or '—'}</b> {uname} ({buyer_link})\n"
@@ -386,7 +305,7 @@ async def on_webapp_data(m: Message):
         p = get_product(int(it["product_id"]))
         if not p:
             continue
-        qty = int(it.get("qty", 1))
+        qty  = int(it.get("qty", 1))
         size = (it.get("size") or "")
         item = {"product_id": p["id"], "size": size, "qty": qty, "price": p["price"]}
         items_payload.append(item)
@@ -409,16 +328,11 @@ async def on_webapp_data(m: Message):
 
 async def main():
     assert BOT_TOKEN, "BOT_TOKEN is not set"
-
-    ensure_db_ready()
-    logging.info(f"DB_PATH resolved to: {op.abspath(DB_PATH)}")
-
     app = build_app()
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", PORT).start()
-    logging.info(f"Web server started on port {PORT} (DB_PATH={DB_PATH})")
-
+    logging.info(f"Web server started on port {PORT}")
     try:
         await dp.start_polling(bot)
     finally:
