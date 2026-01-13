@@ -78,14 +78,22 @@ def get_subcategories(category: str):
 def _row_to_product(r: dict) -> dict:
     raw_sizes = (r.get("sizes") or "").strip()
     sizes = [s.strip() for s in raw_sizes.split(",") if s.strip()] if raw_sizes else []
+
+    # ✅ галерея: в БД поле images_urls (строка "url1|url2|url3")
+    images_urls = (r.get("images_urls") or "").strip()
+
     return {
         "id": r["id"],
         "title": r["title"],
         "category": r.get("category") or "",
         "subcategory": r.get("subcategory") or "",
         "price": r["price"],
+
         "image_url": r.get("image_url") or "",
+        "images_urls": images_urls,  # ✅ ОТДАЁМ НА ФРОНТ
+
         "description": r.get("description") or "",  # ← описание для фронта
+
         # два поля для фронта: список и строка
         "sizes": sizes,
         "sizes_text": ",".join(sizes) if sizes else "",
@@ -94,6 +102,7 @@ def _row_to_product(r: dict) -> dict:
 
 
 def get_products(category=None, subcategory=None):
+    # (можно оставить SELECT * — главное, чтобы в таблице реально была колонка images_urls)
     q = "SELECT * FROM products WHERE is_active = 1"
     args = []
     if category:
