@@ -6,6 +6,12 @@ load_dotenv()  # ✅ env должен загрузиться ДО импорта
 
 # ✅ используем именно DB_PATH и пробрасываем в env, чтобы db.py увидел правильную БД
 DB_PATH = os.getenv("DB_PATH", "data.sqlite").strip() or "data.sqlite"
+
+# ✅ FIX: SQLite не создаёт папки сам → создаём директорию под БД заранее
+db_dir = op.dirname(DB_PATH)
+if db_dir:
+    os.makedirs(db_dir, exist_ok=True)
+
 os.environ["DB_PATH"] = DB_PATH  # ✅ фикс: db.py берёт DB_PATH при импорте
 
 from aiogram import Bot, Dispatcher, F
@@ -103,6 +109,11 @@ def ensure_db_ready():
     global _DB_READY
     if _DB_READY:
         return
+
+    # ✅ ещё раз гарантируем папку (на случай если DB_PATH меняется)
+    db_dir = op.dirname(DB_PATH)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
 
     # 1) пробуем ensure_schema из seed_from_csv
     if callable(ensure_schema):
