@@ -241,6 +241,7 @@ function initApp() {
   }
 
   // ✅ ВСПОМОГАТЕЛЬНОЕ: попытки автозапуска видео (Telegram iOS)
+  // ✅ СТАРТ через 2.5 секунды после открытия + несколько ретраев
   function forceAutoplay(videoEl){
     if (!videoEl) return;
 
@@ -253,6 +254,7 @@ function initApp() {
     videoEl.setAttribute("autoplay", "");
     videoEl.setAttribute("playsinline", "");
     videoEl.setAttribute("webkit-playsinline", "");
+    videoEl.setAttribute("preload", "auto");
 
     const tryPlay = () => {
       try {
@@ -261,17 +263,20 @@ function initApp() {
       } catch {}
     };
 
-    // несколько попыток сразу/с задержками (часто нужно именно так в Telegram)
-    requestAnimationFrame(tryPlay);
-    setTimeout(tryPlay, 120);
-    setTimeout(tryPlay, 600);
-    setTimeout(tryPlay, 1200);
+    // ⏱ главный запуск: 2–3 секунды после открытия
+    setTimeout(() => {
+      tryPlay();
+      // ретраи после основного запуска (часто нужно именно так в Telegram iOS)
+      setTimeout(tryPlay, 150);
+      setTimeout(tryPlay, 650);
+      setTimeout(tryPlay, 1400);
+    }, 2500);
 
-    // если iOS всё равно блокнул — первая микро-любой жест запустит
+    // если iOS всё равно блокнул — первый микро-жест запустит
     document.addEventListener("touchstart", tryPlay, { once:true, passive:true });
     document.addEventListener("click", tryPlay, { once:true });
 
-    // Telegram WebApp события — тоже удобный триггер
+    // Telegram WebApp события — тоже триггер (на всякий)
     try { tg?.onEvent?.("viewportChanged", tryPlay); } catch {}
     try { tg?.onEvent?.("themeChanged", tryPlay); } catch {}
   }
