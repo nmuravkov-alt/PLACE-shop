@@ -3,19 +3,39 @@ from typing import Optional
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, User
+from aiogram.types import (
+    Message,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    WebAppInfo,
+    User,
+)
 from aiogram.client.default import DefaultBotProperties
 from aiohttp import web, ClientSession
 from dotenv import load_dotenv
 
 from db import get_categories, get_subcategories, get_products, get_product, create_order
 
+# ✅ попробуем импортировать функцию импорта (как в PLACE-shop)
+try:
+    from seed_from_csv import seed_from_csv  # expected: seed_from_csv(csv_file: str, clear: bool=False)
+except Exception:
+    seed_from_csv = None
+
 load_dotenv()
 
 BOT_TOKEN   = os.getenv("BOT_TOKEN", "").strip()
-PORT        = int(os.getenv("PORT", "8000"))
+
+# ✅ Railway обычно даёт PORT, дефолт лучше 8080, но можно оставить 8000 если привык
+PORT        = int(os.getenv("PORT", "8080"))
+
 STORE_TITLE = (os.getenv("STORE_TITLE", "LAYOUTPLACE Shop").strip() or "LAYOUTPLACE Shop")
+
+# ✅ используем именно DB_PATH (и подключай Volume /data/..)
 DB_PATH     = os.getenv("DB_PATH", "data.sqlite")
+
+# ✅ Google Sheets CSV URL (именно export?format=csv&gid=0)
+GOOGLE_SHEET_CSV_URL = os.getenv("GOOGLE_SHEET_CSV_URL", "").strip()
 
 def _parse_ids(s: str):
     out = []
@@ -31,11 +51,17 @@ def _parse_ids(s: str):
 
 ADMIN_CHAT_IDS = _parse_ids(os.getenv("ADMIN_CHAT_IDS", "6773668793"))
 
-WEBAPP_URL = (os.getenv("WEBAPP_URL","").strip() or "").rstrip("/")
-if WEBAPP_URL:
-    if not WEBAPP_URL.startswith(("http://","https://")):
-        WEBAPP_URL = "https://" + WEBAPP_URL.lstrip("/")
-    WEBAPP_URL = WEBAPP_URL + "/web/"
+# ✅ WebApp URL: не всегда надо +"/web/" слепо — приводим аккуратно
+WEBAPP_URL = (os.getenv("WEBAPP_URL", "").strip() or "").rstrip("/")
+if WEBAPP_URL and not WEBAPP_URL.startswith(("http://", "https://")):
+    WEBAPP_URL = "https://" + WEBAPP_URL.lstrip("/")
+# хотим чтобы открывался именно /web/
+if WEBAPP_URL and not WEBAPP_URL.endswith("/web"):
+    if not WEBAPP_URL.endswith("/web/"):
+        WEBAPP_URL = WEBAPP_URL + "/web/"
+else:
+    if WEBAPP_URL.endswith("/web"):
+        WEBAPP_URL = WEBAPP_URL + "/"
 
 THANKYOU_TEXT = "Спасибо за заказ! В скором времени с Вами свяжется менеджер и пришлет реквизиты для оплаты!"
 
@@ -54,6 +80,46 @@ def _get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
     except Exception:
         return default
 
+def _is_admin(user_id: int) -> bool:
+    return (user_id in set(ADMIN_CHAT_IDS))
+
+async def _download_csv(url: str, dest_path: str) -> None:
+    async with ClientSession() as sess:
+        async with sess.get(url) as resp:
+            if resp.status != 200:
+                text = await resp.text()
+                raise RuntimeError(f"CSV fetch failed: HTTP {resp.status}: {text[:200]}")
+            data = await resp.read()
+    os.makedirs(op.dirname(dest_path), exist_ok=True)
+    with open(dest_path, "wb") as f:
+        f.write(data)
+
+async def sync_from_google(clear_products: bool = False) -> str:
+    """
+    Скачивает CSV из Google Sheets и импортирует товары в БД.
+    clear_products=False — НЕ трогает заказы/настройки, обновляет только товары (как в PLACE-shop).
+    """
+    if not GOOGLE_SHEET_CSV_URL:
+        raise RuntimeError("GOOGLE_SHEET_CSV_URL не задан в Railway Variables")
+
+    tmp_csv = "/tmp/products_sheet.csv"
+    await _download_csv(GOOGLE_SHEET_CSV_URL, tmp_csv)
+
+    if seed_from_csv is None:
+        # fallback: запустить как скрипт (если импорт функции не сработал)
+        import sys, subprocess
+        cmd = [sys.executable, "seed_from_csv.py", "--csv", tmp_csv]
+        if clear_products:
+            cmd.append("--clear")
+        p = subprocess.run(cmd, capture_output=True, text=True)
+        if p.returncode != 0:
+            raise RuntimeError((p.stderr or p.stdout or "").strip()[:4000])
+        return f"✅ Синк выполнен (script). {(p.stdout or '').strip()}"
+    else:
+        # основной путь — импорт функции
+        seed_from_csv(tmp_csv, clear=clear_products)
+        return "✅ Товары обновлены из Google Sheets."
+
 # ---------- Web ----------
 async def index_handler(request):
     return web.FileResponse(op.join("web", "index.html"))
@@ -67,16 +133,10 @@ async def file_handler(request):
         return web.Response(status=404, text="Not found")
     return web.FileResponse(p)
 
-# Конфиг для фронта:
-#  title       — заголовок магазина
-#  video_url   — URL видео для героя (если задан settings.hero_video_url)
-#  logo_url    — картинка-логотип (fallback)
-#  hero_url    — совместимое поле-синоним (на всякий случай)
-#  hero_type   — опционально, если хочешь использовать на фронте
 async def api_config(request):
-    logo_url   = _get_setting("logo_url", "")              # картинка-логотип (fallback)
-    video_url  = _get_setting("hero_video_url", "")        # видео для главной
-    hero_url   = video_url or logo_url                     # совместимое поле
+    logo_url   = _get_setting("logo_url", "")
+    video_url  = _get_setting("hero_video_url", "")
+    hero_url   = video_url or logo_url
     hero_type  = "video" if video_url else ("image" if logo_url else "")
 
     return web.json_response({
@@ -110,12 +170,17 @@ async def api_order(request):
         size = (it.get("size") or "")
         items.append({"product_id": p["id"], "size": size, "qty": qty, "price": p["price"]})
         total += p["price"] * qty
+
     order_id = create_order(
-        user_id=0, username=None,
-        full_name=data.get("full_name"), phone=data.get("phone"),
-        address=data.get("address"), comment=data.get("comment"),
+        user_id=0,
+        username=None,
+        full_name=data.get("full_name"),
+        phone=data.get("phone"),
+        address=data.get("address"),
+        comment=data.get("comment"),
         telegram=data.get("telegram"),
-        total_price=total, items=items
+        total_price=total,
+        items=items,
     )
     await notify_admins(order_id, data, total, items, user=None)
     return web.json_response({"ok": True, "order_id": order_id})
@@ -149,7 +214,6 @@ async def img_proxy(request):
                 if resp.status != 200:
                     return web.Response(status=resp.status, text="fetch error")
                 data = await resp.read()
-                # пробрасываем исходный тип (лучше, чем жёстко image/jpeg)
                 ctype = resp.headers.get("Content-Type", "application/octet-stream")
                 headers = {"Cache-Control":"public, max-age=31536000"}
                 return web.Response(body=data, content_type=ctype, headers=headers)
@@ -190,6 +254,19 @@ async def start(m: Message):
         )
     ]])
     await m.answer(f"{title_upper} — мини-магазин в Telegram. Открой витрину ниже:", reply_markup=kb)
+
+@dp.message(Command("sync"))
+async def cmd_sync(m: Message):
+    if not _is_admin(m.from_user.id):
+        return await m.answer("⛔️ Нет доступа.")
+    clear = "clear" in (m.text or "").lower()
+    await m.answer("⏳ Обновляю товары из Google Sheets...")
+    try:
+        res = await sync_from_google(clear_products=clear)
+        await m.answer(res)
+    except Exception as e:
+        logging.exception("sync failed: %s", e)
+        await m.answer(f"❌ Ошибка синка: {e}")
 
 async def notify_admins(order_id: int, data: dict, total: int, items_payload: list, user: Optional[User]):
     uname = f"@{user.username}" if (user and user.username) else "—"
